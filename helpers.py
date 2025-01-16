@@ -10,36 +10,27 @@ class Component(ABC):
         """Can be overridden if super().__init__() is called."""
         self.enabled = False
 
-    @property
-    def ready(self) -> bool:
-        """Property of the component. Added for ease of use."""
-        return self.is_ready()
-
     @abstractmethod
-    def is_ready(self) -> bool:
-        """Required method. Decide if the component is in its ready state (ex: shooter is at speed)."""
+    def execute(self):
+        """Required function. Do not call this method from anywhere in the code since the MagicRobot will automatically
+        call the execute method of all components at the end of the control loop."""
         pass
 
-    @abstractmethod
-    def run(self):
-        """Required method. Implement code to run the component."""
+    def on_disable(self):
+        """Optional function. This function will be called when the robot leaves auton or teleop."""
         pass
 
-    @abstractmethod
-    def stop(self):
-        """Required method. Implement code to stop the component."""
+    def on_enable(self):
+        """Optional function. This function will be called when the robot enters auton or teleop. It should be used
+        to initialize the component to a "safe" state so that nothing unexpected happens when the robot is enabled."""
         pass
 
-    def enable(self) -> None:
-        """Concrete method that can be overridden if super().enable() is called."""
-        self.enabled = True
+    def setup(self):
+        """Optional function. This function is automatically called after the createObjects function finishes, and
+        after all components are created. All variables imported from MagicRobot should be initialized at this point."""
+        pass
 
-    def execute(self) -> None:
-        """Can be overridden if necessary. Called at the end of the control loop."""
-        if self.enabled:
-            self.run()
-        else:
-            self.stop()
+
 
 
 class Auton(ABC):
