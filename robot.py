@@ -29,6 +29,8 @@ class MyRobot(magicbot.MagicRobot):
         # Called every 20ms in each run mode.
         super().robotPeriodic()
         CommandScheduler.getInstance().run()
+        SmartDashboard.putNumber("Left Joystick", self.robotController.getLeftX())
+        SmartDashboard.putNumber("Right Joystick", self.robotController.getRightX())
 
     def bindButtons(self):
         self.robotController.a().onTrue(
