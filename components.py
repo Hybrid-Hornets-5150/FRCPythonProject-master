@@ -1,10 +1,12 @@
 import rev
 from rev import SparkMax, SparkMaxConfig, SparkBaseConfig, SparkBase, SparkLowLevel, SparkClosedLoopController
+from wpilib import SmartDashboard
 
 from helpers import Component
 from collections import namedtuple
 
 MotorConfig = namedtuple("MotorConfig", ["kP", "kI", "kD"])
+swerveRotationsPerRev = 5.5
 
 class SwerveModule(Component):
     swerve_motor: SparkMax
@@ -35,3 +37,46 @@ class SwerveModule(Component):
     def on_disable(self):
         self.swerve_motor.disable()
         self.drive_motor.disable()
+
+
+class PIDDemo(Component):
+    position_spark: SparkMax
+
+    _position_controller: SparkClosedLoopController
+    _setpoint: int
+
+    position_target = 0
+    PID = [0, 0, 0]
+    # Current error, error rate of change, total error
+    errors = {"e": 0, "e_roc": 0, "total_e": 0}
+    actions = [0, 0, 0]
+
+    def setup(self):
+        self._position_controller = self.position_spark.getClosedLoopController()
+
+    def step(self):
+        # Calculate error to be acted on by individual PID elements.
+        e = self._setpoint - self.position_target
+        self.errors["e_roc"] = e - self.errors["e"]
+        self.errors["e"] = self._setpoint - self.position_target
+        self.errors["total_e"] += e
+
+        self.actions = [0, 0, 0]
+
+        # Proportional term
+        self.actions[0] += self.PID[0] * self.errors["e"]
+
+        # Integral term
+        self.actions[1] += self.PID[1] * self.errors["total_e"]
+
+        # Derivative term
+        self.actions[2] += self.PID[2] * self.errors["e_roc"]
+
+        self._position_controller.setReference(self.position_target,
+                                               SparkLowLevel.ControlType.kPosition,
+                                               rev.ClosedLoopSlot.kSlot0)
+    def set_setpoint(self, sp):
+        self._setpoint = sp
+
+    def execute(self):
+        pass
