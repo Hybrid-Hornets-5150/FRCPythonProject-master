@@ -12,8 +12,10 @@ class SwerveModule(Component):
 
     _swerve_controller: SparkClosedLoopController
     _drive_controller: SparkClosedLoopController
+
     def execute(self):
         pass
+    
     def setup(self):
         swerve_motor_config = SparkMaxConfig()
         swerve_motor_config.setIdleMode(SparkBaseConfig.IdleMode.kBrake).smartCurrentLimit(50)
