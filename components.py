@@ -10,14 +10,15 @@ MotorConfig = namedtuple("MotorConfig", ["kP", "kI", "kD"])
 class SwerveModule(Component):
     swerve_motor: SparkMax
     drive_motor: SparkMax
-
-    _swerve_controller: SparkClosedLoopController
-    _drive_controller: SparkClosedLoopController
     swerve_pid: MotorConfig
     drive_pid: MotorConfig
 
+    _swerve_controller: SparkClosedLoopController
+    _drive_controller: SparkClosedLoopController
+
     def execute(self):
         pass
+
     def setup(self):
         swerve_motor_config = SparkMaxConfig()
         swerve_motor_config.setIdleMode(SparkBaseConfig.IdleMode.kBrake).smartCurrentLimit(50)
@@ -39,9 +40,9 @@ class SwerveModule(Component):
 
 
     def set_swerve_rotations(self, rot):
-        self._swerve_controller.setReference(rot, SparkLowLevel.ControlType.kMAXMotionPositionControl, rev.ClosedLoopSlot.kSlot0, 1 / self.swerve_kV)
+        self._swerve_controller.setReference(rot, SparkLowLevel.ControlType.kPosition, rev.ClosedLoopSlot.kSlot0)
     def set_drive_speed(self, speed):
-        self._drive_controller.setReference(speed, SparkLowLevel.ControlType.kMAXMotionVelocityControl, rev.ClosedLoopSlot.kSlot0, 1 / self.drive_kV)
+        self._drive_controller.setReference(speed, SparkLowLevel.ControlType.kVelocity, rev.ClosedLoopSlot.kSlot0)
     def on_disable(self):
         self.swerve_motor.disable()
         self.drive_motor.disable()
