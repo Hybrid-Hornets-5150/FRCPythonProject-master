@@ -6,10 +6,6 @@ from magicbot.state_machine import AutonomousStateMachine
 class Component(ABC):
     """Abstract class for creating components"""
 
-    def __init__(self):
-        """Can be overridden if super().__init__() is called."""
-        self.enabled = False
-
     @abstractmethod
     def execute(self):
         """Required function. Do not call this method from anywhere in the code since the MagicRobot will automatically
