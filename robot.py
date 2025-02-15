@@ -17,7 +17,7 @@ class MyRobot(magicbot.MagicRobot):
     def createObjects(self):
         # Create motors and stuff here
         self.robotController = CommandXboxController(0)
-        self.swerve = SwerveModule(5, 3)
+        self.driveTrain = DriveTrain()
 
     def autonomousInit(self):
         # Runs when auton starts
@@ -25,12 +25,25 @@ class MyRobot(magicbot.MagicRobot):
 
     def teleopInit(self):
         # Called when teleop starts; optional
-        pass
+        self.driveTrain.on_enable()
 
     def teleopPeriodic(self):
         # Called every 20ms when teleop runs
-        self.swerve.set_swerve_rotations(self.robotController.getLeftX()*10)
-        self.swerve.set_drive_speed(self.robotController.getRightY()*2000)
+        lx = self.robotController.getLeftX()
+        ly = self.robotController.getLeftY()
+        if abs(lx) < 0.1:
+            lx = 0
+        if abs(ly) < 0.1:
+            ly = 0
+        self.driveTrain.set_velocity(lx, ly)
+        rotateSpeed = 0
+        rotateSpeed -= self.robotController.getLeftTriggerAxis()
+        rotateSpeed += self.robotController.getRightTriggerAxis()
+        rotateSpeed /= 2
+        self.driveTrain.set_rotation(rotateSpeed)
+        if lx == 0 and ly == 0 and rotateSpeed == 0:
+            self.driveTrain.stop()
+        self.driveTrain.teleop()
 
     def testInit(self) -> None:
         pass
@@ -45,4 +58,6 @@ class MyRobot(magicbot.MagicRobot):
         SmartDashboard.putNumber("Left Joystick", self.robotController.getLeftX())
         SmartDashboard.putNumber("Right Joystick", self.robotController.getRightX())
 
+    def disabledInit(self):
+        self.driveTrain.on_disable()
 

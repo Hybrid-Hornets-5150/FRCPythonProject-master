@@ -6,7 +6,6 @@ from magicbot.state_machine import AutonomousStateMachine
 class Component(ABC):
     """Abstract class for creating components"""
 
-    @abstractmethod
     def execute(self):
         """Required function. Do not call this method from anywhere in the code since the MagicRobot will automatically
         call the execute method of all components at the end of the control loop."""
