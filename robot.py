@@ -39,7 +39,7 @@ class MyRobot(magicbot.MagicRobot):
         self.estop: bool = False
         self.lift_setpoints = [1, 24]
         self.lift_setpoint_index = 0
-        self.arm_setpoints = [-98, 0, 49.2]
+        self.arm_setpoints = [-98, 5, 49.2]
         self.arm_setpoint_index = 0
         self.lift_manual = False
         self.arm_manual = False
