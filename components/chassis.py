@@ -246,4 +246,4 @@ class DriveTrain(Subsystem):
         return avg
 
     def represent_pose(self):
-        return f"X: {self.odometry.getPose().X()}, Y: {self.odometry.getPose().Y()},Theta: {self.odometry.getPose().rotation()}"
+        return f"{self.odometry.getPose().X()}, {self.odometry.getPose().Y()}, {self.odometry.getPose().Y()}"

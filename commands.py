@@ -132,3 +132,25 @@ class SetKickerPercent(Command):
 
     def isFinished(self) -> bool:
         return True
+
+class AddArmAngle(Command):
+    """Continuous command, doesn't work like it"""
+    def __init__(self, degrees, arm):
+        super().__init__()
+        self.degrees = degrees
+        self.arm = arm
+        self.addRequirements(self.arm)
+        self.running = True
+
+    def initialize(self):
+        self.running = True
+
+    def execute(self):
+        self.arm.angle_setpoint += self.degrees
+        self.arm.arm_angle = self.arm.angle_setpoint
+
+    def isFinished(self) -> bool:
+        return self.running
+
+    def cancel(self) -> None:
+        self.running = False

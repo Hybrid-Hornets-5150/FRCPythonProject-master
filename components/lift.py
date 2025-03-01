@@ -2,7 +2,7 @@ import wpimath.units
 from commands2 import Subsystem
 from phoenix6 import hardware, controls, configs
 from phoenix6.signals import InvertedValue, NeutralModeValue
-from rev import SparkMax, SparkLowLevel, SparkMaxConfig, SparkBase
+from rev import SparkMax, SparkLowLevel, SparkMaxConfig, SparkBase, SparkBaseConfig
 from wpilib import SmartDashboard
 
 from constants import *
@@ -41,7 +41,7 @@ class Lift(Component):
         limit_config = talon_configs.software_limit_switch
         limit_config.forward_soft_limit_enable = True
         limit_config.reverse_soft_limit_enable = True
-        limit_config.forward_soft_limit_threshold = 130
+        limit_config.forward_soft_limit_threshold = 140
         limit_config.reverse_soft_limit_threshold = 5
 
         # Configure controller
@@ -74,7 +74,7 @@ class Lift(Component):
         pass
 
     def periodic(self):
-        SmartDashboard.putNumber("Lift counts", self.motor.get_rotor_position().value)
+        pass
 
 
 class Grabber(Subsystem):
@@ -92,6 +92,10 @@ class Grabber(Subsystem):
 
         follower_config = SparkMaxConfig().follow(CanIDs.IntakeLeaderSpark, True)
         self.intake_follower_motor.configure(follower_config, SparkBase.ResetMode.kResetSafeParameters,
+                                             SparkBase.PersistMode.kPersistParameters)
+
+        kicker_config = SparkMaxConfig().setIdleMode(SparkBaseConfig.IdleMode.kBrake)
+        self.kicker_motor.configure(kicker_config, SparkBase.ResetMode.kResetSafeParameters,
                                              SparkBase.PersistMode.kPersistParameters)
         # endregion
 
@@ -149,7 +153,8 @@ class Arm(Subsystem):
         limit_config.forward_soft_limit_enable = True
         limit_config.reverse_soft_limit_enable = True
         limit_config.forward_soft_limit_threshold = 26
-        limit_config.reverse_soft_limit_threshold = 1
+        limit_config.reverse_soft_limit_threshold = -0.5
+        self.angle_limits = [-0.5, 26]
 
         # Configure arm controller
         self.rotation_motor.configurator.apply(talon_configs)
@@ -181,7 +186,7 @@ class Arm(Subsystem):
         limit_config = talon_configs.software_limit_switch
         limit_config.forward_soft_limit_enable = True
         limit_config.reverse_soft_limit_enable = True
-        limit_config.forward_soft_limit_threshold = 225
+        limit_config.forward_soft_limit_threshold = 280
         limit_config.reverse_soft_limit_threshold = 0.1
 
         # Configure extension controller
@@ -214,6 +219,14 @@ class Arm(Subsystem):
         self.extension = 0
         self.angle_setpoint = degrees
         rotations = 0.163 * degrees + 16.1
+
+        if rotations < self.angle_limits[0]:
+            rotations = self.angle_limits[0]
+            self.angle_setpoint = (rotations - 16.1) / 0.163
+        elif rotations > self.angle_limits[1]:
+            rotations = self.angle_limits[1]
+            self.angle_setpoint = (rotations - 16.1) / 0.163
+
         feedforward = 0.5
         self.rotation_motor.set_control(self.rotation_request.with_position(rotations).with_feed_forward(feedforward))
 
@@ -232,4 +245,9 @@ class Arm(Subsystem):
         self.arm_angle = self.angle_setpoint - 5
 
     def set_arm_extension(self, inches):
-        self.extension_motor.set_control(self.extension_request.with_position(inches * armExtensionInchesPerRev))
+        self.extension_setpoint = inches
+        self.extension_motor.set_control(self.extension_request.with_position(self.extension_setpoint * armExtensionInchesPerRev))
+
+    def at_extension(self):
+        return abs(self.extension - self.extension_setpoint) < 1
+

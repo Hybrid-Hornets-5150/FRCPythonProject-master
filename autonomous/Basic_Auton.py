@@ -1,18 +1,16 @@
 from commands2 import Command, CommandScheduler
 from magicbot import AutonomousStateMachine, state
-from pathplannerlib.auto import AutoBuilder, CommandUtil, PathPlannerAuto
-from pathplannerlib.logging import PathPlannerLogging
-from pathplannerlib.trajectory import PathPlannerTrajectory
 from wpilib import SmartDashboard, SendableChooser, Field2d
 from wpimath.kinematics import ChassisSpeeds
 
 from components.chassis import DriveTrain
 from components.lift import Lift
+from constants import autonSpeedScaling
 
 
-class basicAuto(AutonomousStateMachine):
+class BasicAuto(AutonomousStateMachine):
     MODE_NAME = "Basic Autonomous"
-    DEFAULT = False
+    DEFAULT = True
     DISABLED = False
 
     autoChooser: SendableChooser
@@ -38,7 +36,7 @@ class basicAuto(AutonomousStateMachine):
 
     @state()
     def drive(self):
-        speed = ChassisSpeeds(vx=0, vy=2, omega=0)
+        speed = ChassisSpeeds(vx=0, vy=autonSpeedScaling, omega=0)
         self.driveTrain.driveRobotRelative(speed)
         if self.distance_target - self.get_distance() < self.position_deadband:
             self.next_state("second_state")

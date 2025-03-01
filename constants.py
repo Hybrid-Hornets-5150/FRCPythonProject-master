@@ -56,3 +56,5 @@ centerPoint = (units.feetToMeters(22.5 / 24), units.feetToMeters(30.25 / 24))
 liftGearRatio = 1
 armRotationGearRatio = 1
 armExtensionInchesPerRev = 1
+teleopSpeedScaling = 1.75
+autonSpeedScaling = 1

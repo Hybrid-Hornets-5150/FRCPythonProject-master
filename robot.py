@@ -1,21 +1,16 @@
-import commands2
-import rev
 import wpilib
-from commands2.sysid import SysIdRoutine
-from pathplannerlib.auto import PathPlannerAuto
-from phoenix6 import SignalLogger
+from robotpy_ext.autonomous import AutonomousModeSelector
 from wpilib import drive, SmartDashboard, SendableChooser, Field2d
 import magicbot
 from commands2 import *
 from commands2.button import CommandXboxController
 
-import commands
-from commands import LiftVelocity, SetArmVoltage, RunIntake, SetKickerPercent
+from commands import LiftVelocity, SetArmVoltage, RunIntake, SetKickerPercent, AddArmAngle
 from components.chassis import *
-from rev import SparkMax, SparkLowLevel
 
 from components.climber import Climber
 from components.lift import Lift, Arm, Grabber
+from state_machines import IntakeCoral, ScoreCoral
 
 
 class MyRobot(magicbot.MagicRobot):
@@ -26,6 +21,7 @@ class MyRobot(magicbot.MagicRobot):
     #Other
     autoChooser: SendableChooser
     field: Field2d
+    automodes: AutonomousModeSelector
 
     # Subsystems
     driveTrain: DriveTrain
@@ -34,24 +30,38 @@ class MyRobot(magicbot.MagicRobot):
     climber: Climber
     grabber: Grabber
 
+    # State machines
+    coral_intake_fsm: IntakeCoral
+    coral_score_fsm: ScoreCoral
+
     def __init__(self):
         super().__init__()
         self.estop: bool = False
-        self.lift_setpoints = [1, 24]
+        self.lift_setpoints = [2, 26]
         self.lift_setpoint_index = 0
-        self.arm_setpoints = [-98, 5, 49.2]
+        self.arm_setpoints = [-107, -75, -60, 5, 60]
         self.arm_setpoint_index = 0
         self.lift_manual = False
         self.arm_manual = False
+        self.manual_intake = False
+        self.changing_angle_manual =  False
         self.extension_setpoint = 0
 
+
+
     def createObjects(self):
+        SmartDashboard.putBoolean("Arm Angle In Manual", self.arm_manual)
+        SmartDashboard.putBoolean("Lift Height In Manual", self.lift_manual)
+        SmartDashboard.putNumber("Desired X Velocity", 0)
+        SmartDashboard.putNumber("Desired Y Velocity", 0)
+        SmartDashboard.putNumber("Desired Rotational Velocity", 0)
+        SmartDashboard.putBoolean("Drive Train in Slow Mode", False)
+
         # Create motors and stuff here
         self.driveController = CommandXboxController(0)
         self.operatorController = CommandXboxController(1)
 
         self.field = Field2d()
-        SmartDashboard.putData("Field", self.field)
 
         self.driveTrain = DriveTrain(self.field)
 
@@ -64,17 +74,9 @@ class MyRobot(magicbot.MagicRobot):
         self.grabber = Grabber()
 
         self.autoChooser = AutoBuilder.buildAutoChooser("Test Auton")
-        SmartDashboard.putData("Auto Chooser", self.autoChooser)
+        SmartDashboard.putData("Path Planner Auton (Not Functional)", self.autoChooser)
 
-        # self.robotController.povUp().onTrue(commands.SetArmAngle(0, self.arm))
-        # self.robotController.povDown().onTrue(commands.SetArmVoltage(0, self.arm))
-        # self.robotController.povLeft().onTrue(commands.LiftTo(10, self.lift))
-        # self.robotController.povRight().onTrue(commands.LiftTo(0, self.lift))
-        # self.robotController.x().onTrue(commands.RunIntake(0, self.grabber))
-        # self.robotController.b().onTrue(commands.RunIntake(50, self.grabber))
-        # self.robotController.a().onTrue(commands.SetExtension(0, self.arm))
-        # self.robotController.y().onTrue(commands.SetExtension(5, self.arm))
-
+        self.automodes = AutonomousModeSelector("Basic Auto")
 
         #region operatorControls
         self.operatorController.povUp().onTrue(
@@ -103,54 +105,39 @@ class MyRobot(magicbot.MagicRobot):
             InstantCommand(self.toggle_lift_manual)
         )
 
+        add_angle_cmd = InstantCommand(self.set_manual_arm).andThen(AddArmAngle(1, self.arm).repeatedly().until(self.not_manual_arm))
+        sub_angle_cmd = InstantCommand(self.set_manual_arm).andThen(AddArmAngle(-1, self.arm).repeatedly().until(self.not_manual_arm))
+
         self.operatorController.povRight().onTrue(
             InstantCommand(self.goto_zero_extension).andThen(WaitUntilCommand(self.at_zero_extension))
             .andThen(
                 ConditionalCommand(
-                    SetArmVoltage(2, self.arm),
+                    add_angle_cmd
+                    ,
                     InstantCommand(self.increase_arm_setpoint),
                     self.is_arm_manual
                 )
             )
         ).onFalse(
-            SetArmVoltage(0, self.arm)
-            .onlyIf(self.is_arm_manual)
+            InstantCommand(self.unset_manual_arm)
         )
 
         self.operatorController.povLeft().onTrue(
             InstantCommand(self.goto_zero_extension).andThen(WaitUntilCommand(self.at_zero_extension))
             .andThen(
                 ConditionalCommand(
-                    SetArmVoltage(-0.5, self.arm),
+                    sub_angle_cmd
+                    ,
                     InstantCommand(self.decrease_arm_setpoint),
                     self.is_arm_manual
                 )
             )
         ).onFalse(
-            SetArmVoltage(0, self.arm)
-            .onlyIf(self.is_arm_manual)
+            InstantCommand(self.unset_manual_arm)
         )
 
         self.operatorController.start().onTrue(
             InstantCommand(self.toggle_arm_manual)
-        )
-
-        self.operatorController.b().onTrue(
-            RunIntake(0.5, self.grabber)
-        ).onFalse(
-            RunIntake(0, self.grabber)
-        )
-
-        self.operatorController.y().onTrue(
-            SetKickerPercent(0.5, self.grabber)
-        ).onFalse(
-            SetKickerPercent(0, self.grabber)
-        )
-
-        self.operatorController.a().onTrue(
-            SetKickerPercent(-0.5, self.grabber)
-        ).onFalse(
-            SetKickerPercent(0, self.grabber)
         )
 
         self.operatorController.x().onTrue(
@@ -158,6 +145,47 @@ class MyRobot(magicbot.MagicRobot):
         )
 
         #endregion
+
+        #region driverControls
+
+        self.driveController.rightBumper().onTrue(
+            RunIntake(0.05, self.grabber)
+            .andThen(InstantCommand(lambda: setattr(self, "manual_intake", True)))
+        ).onFalse(
+            RunIntake(0, self.grabber)
+            .andThen(InstantCommand(lambda: setattr(self, "manual_intake", False)))
+        )
+
+        self.driveController.leftBumper().onTrue(
+            RunIntake(-0.05, self.grabber)
+            .andThen(InstantCommand(lambda: setattr(self, "manual_intake", True)))
+        ).onFalse(
+            RunIntake(0, self.grabber)
+            .andThen(InstantCommand(lambda: setattr(self, "manual_intake", False)))
+        )
+
+        self.driveController.a().onTrue(
+            SetKickerPercent(-0.5, self.grabber)
+        ).onFalse(
+            SetKickerPercent(0, self.grabber)
+        )
+
+        self.driveController.y().onTrue(
+            SetKickerPercent(0.05, self.grabber)
+        ).onFalse(
+            SetKickerPercent(0, self.grabber)
+        )
+
+        #endregion
+
+    def set_manual_arm(self):
+        self.changing_angle_manual = True
+
+    def unset_manual_arm(self):
+        self.changing_angle_manual = False
+
+    def not_manual_arm(self):
+        return not self.changing_angle_manual
 
     def at_zero_extension(self):
         return self.arm.extension < 1
@@ -167,6 +195,7 @@ class MyRobot(magicbot.MagicRobot):
 
     def toggle_arm_manual(self):
         self.arm_manual = not self.arm_manual
+        SmartDashboard.putBoolean("Arm Angle In Manual", self.arm_manual)
 
     def is_arm_manual(self):
         return self.arm_manual
@@ -181,7 +210,6 @@ class MyRobot(magicbot.MagicRobot):
 
         self.arm.arm_angle = self.arm_setpoints[self.arm_setpoint_index]
 
-
     def decrease_arm_setpoint(self):
         self.arm_setpoint_index -= 1
         if self.arm_setpoint_index <= 0:
@@ -191,6 +219,7 @@ class MyRobot(magicbot.MagicRobot):
 
     def toggle_lift_manual(self):
         self.lift_manual = not self.lift_manual
+        SmartDashboard.putBoolean("Lift Height In Manual", self.lift_manual)
 
     def increase_lift_setpoint(self):
         self.lift_setpoint_index += 1
@@ -212,11 +241,15 @@ class MyRobot(magicbot.MagicRobot):
     def autonomousInit(self):
         super().autonomousInit()
         # Runs when auton starts
-        pass
+        self.arm_setpoint_index = 0
+        self.arm.arm_angle = self.arm_setpoints[self.arm_setpoint_index]
 
     def teleopInit(self):
         # Called when teleop starts; optional
-        self.lift.set_height(1)
+        #CameraServer.startAutomaticCapture()
+        self.lift.set_height(2)
+        self.arm_setpoint_index = 1
+        self.arm.arm_angle = self.arm_setpoints[self.arm_setpoint_index]
         self.driveTrain.on_enable()
         self.lift.on_enable()
 
@@ -227,13 +260,10 @@ class MyRobot(magicbot.MagicRobot):
 
         lt = self.operatorController.getLeftTriggerAxis()
         rt = self.operatorController.getRightTriggerAxis()
-        if lt < 0.1:
-            lt = 0
+        lt = MyRobot.deadband(lt, 0.1)
+        rt = MyRobot.deadband(rt, 0.1)
 
-        if rt < 0.1:
-            rt = 0
-
-        travel = 0.4*8*(rt - lt)*0.01
+        travel = 0.4*8*(rt - lt)*0.02
         self.extension_setpoint += travel
         if self.extension_setpoint < 0:
             self.extension_setpoint = 0
@@ -244,24 +274,41 @@ class MyRobot(magicbot.MagicRobot):
 
         #endregion
 
+        # Currently unused
         if self.estop:
             return
+
+        #region driverControl
+
         lx = self.driveController.getLeftX()
         ly = self.driveController.getLeftY() * (-1)
 
         rotation = self.driveController.getRightX()
-        climb = self.driveController.getRightY()
+        climb = self.operatorController.getRightY()
 
-        if abs(lx) < 0.2:
-            lx = 0
-        if abs(ly) < 0.2:
-            ly = 0
-        if abs(rotation) < 0.2:
-            rotation = 0
-        if abs(climb) < 0.2:
-            climb = 0
+        l_trigger = self.driveController.getLeftTriggerAxis()
+        r_trigger = self.driveController.getRightTriggerAxis()
+
+        l_trigger = MyRobot.deadband(l_trigger, 0.2)
+        r_trigger = MyRobot.deadband(r_trigger, 0.2)
+        lx = MyRobot.deadband(lx)
+        ly = MyRobot.deadband(ly)
+        rotation = MyRobot.deadband(rotation)
+        climb = MyRobot.deadband(climb)
 
         rotation = rotation*2*math.pi/4 * (-1)
+
+        if r_trigger > 0:
+            self.coral_intake_fsm.intake()
+        elif l_trigger > 0:
+            self.coral_score_fsm.run()
+            # Old scoring
+            # self.grabber.intake_percent = -0.2
+            # self.grabber.kicker_percent = 0.5
+
+        if l_trigger <= 0.1 and r_trigger <= 0.1 and not self.manual_intake:
+            self.grabber.intake_percent = 0.02
+            self.grabber.kicker_percent = 0
 
         if lx != 0:
             angle = math.atan(abs(ly)/abs(lx))
@@ -280,12 +327,20 @@ class MyRobot(magicbot.MagicRobot):
         elif lx > 0 > ly:
             angle = 360 - angle
 
-        SmartDashboard.putNumber("angle", angle)
-
-        SmartDashboard.putNumberArray("Controller L", [lx, ly])
-        speed = ChassisSpeeds(vx=lx, vy=ly, omega=rotation)
+        if self.lift_setpoint_index > 0 or self.arm_setpoint_index > 2:
+            speed_scalar = 0.5
+            slow = True
+        else:
+            speed_scalar = 1
+            slow = False
+        speed = ChassisSpeeds(vx=lx*teleopSpeedScaling*speed_scalar, vy=ly*teleopSpeedScaling*speed_scalar, omega=rotation*teleopSpeedScaling*speed_scalar)
+        SmartDashboard.putNumber("Desired X Velocity", lx*teleopSpeedScaling*speed_scalar)
+        SmartDashboard.putNumber("Desired Y Velocity", ly*teleopSpeedScaling*speed_scalar)
+        SmartDashboard.putNumber("Desired Rotational Velocity", rotation*teleopSpeedScaling*speed_scalar)
+        SmartDashboard.putBoolean("Drive Train in Slow Mode", slow)
         self.driveTrain.driveRobotRelative(speed)
-        #self.climber.percent_output = climb
+        self.climber.percent_output = climb
+        #endregion
 
     def testInit(self) -> None:
         pass
@@ -296,16 +351,22 @@ class MyRobot(magicbot.MagicRobot):
     def robotPeriodic(self):
         # Called every 20ms in each run mode.
         super().robotPeriodic()
-        SmartDashboard.putBoolean("ESTOP", self.estop)
         if self.estop:
             return
 
-        lx = self.driveController.getLeftX()
-        ly = self.driveController.getLeftY() * (-1)
+        SmartDashboard.putNumber("Current Lift Setpoint", self.lift_setpoints[self.lift_setpoint_index])
+        SmartDashboard.putNumber("Current Angle Setpoint", self.arm_setpoints[self.arm_setpoint_index])
+        SmartDashboard.putNumber("Current Extension Setpoint", self.arm.extension_setpoint)
 
-        SmartDashboard.putNumberArray("Controller L", [lx, ly])
         CommandScheduler.getInstance().run()
 
     def disabledInit(self):
         self.driveTrain.on_disable()
+
+    @staticmethod
+    def deadband(signal, db=0.2):
+        if abs(signal) < db:
+            return 0
+        else:
+            return signal
 
