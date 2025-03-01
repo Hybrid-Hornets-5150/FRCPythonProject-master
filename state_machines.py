@@ -120,7 +120,7 @@ class ScoreCoral(StateMachine):
     def run_away(self): #Like the brave Sir Robin
         self.grabber.intake_percent = -0.2
         self.driveTrain.set_angle(90)
-        self.driveTrain.drive_all_percent(-0.1)
+        self.driveTrain.drive_all_percent(-0.2)
 
     @state()
     def final(self):
