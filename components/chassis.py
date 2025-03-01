@@ -107,10 +107,12 @@ class SwerveModule(Subsystem):
         self.set_swerve_rotations(rotations)
         self.set_drive_speed(speed)
 
-    def set_swerve_rotations(self, rot):
-        rot += self.angle_offset
-        if rot > 1:
-            rot -= 1
+    def set_swerve_rotations(self, rot, adjusted=False):
+        if not adjusted:
+            rot += self.angle_offset
+            if rot > 1:
+                rot -= 1
+
         self._swerve_controller.setReference(rot, SparkLowLevel.ControlType.kPosition, rev.ClosedLoopSlot.kSlot0)
 
     def set_drive_speed(self, speed: wpimath.units.meters_per_second):
