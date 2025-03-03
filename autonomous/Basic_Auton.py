@@ -13,7 +13,6 @@ class BasicAuto(AutonomousStateMachine):
     DEFAULT = True
     DISABLED = False
 
-    autoChooser: SendableChooser
     lift: Lift
     driveTrain: DriveTrain
 
@@ -37,11 +36,11 @@ class BasicAuto(AutonomousStateMachine):
     @state()
     def drive(self):
         speed = ChassisSpeeds(vx=0, vy=autonSpeedScaling, omega=0)
-        self.driveTrain.driveRobotRelative(speed)
+        self.driveTrain.driveRobot(speed)
         if self.distance_target - self.get_distance() < self.position_deadband:
             self.next_state("second_state")
 
     @state()
     def second_state(self):
         speed = ChassisSpeeds(0,0,0)
-        self.driveTrain.driveRobotRelative(speed)
+        self.driveTrain.driveRobot(speed)

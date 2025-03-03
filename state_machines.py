@@ -60,7 +60,6 @@ class CheckAlignment(StateMachine):
         super().done()
         self.arm.arm_angle = self.original_angle
 
-
 class ClearReef(StateMachine):
     arm: Arm
 

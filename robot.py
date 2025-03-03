@@ -1,6 +1,7 @@
 import wpilib
+import wpimath.filter
 from robotpy_ext.autonomous import AutonomousModeSelector
-from wpilib import drive, SmartDashboard, SendableChooser, Field2d
+from wpilib import drive, SmartDashboard, SendableChooser, Field2d, CameraServer
 import magicbot
 from commands2 import *
 from commands2.button import CommandXboxController
@@ -19,9 +20,7 @@ class MyRobot(magicbot.MagicRobot):
     operatorController: CommandXboxController
 
     #Other
-    autoChooser: SendableChooser
     field: Field2d
-    automodes: AutonomousModeSelector
 
     # Subsystems
     driveTrain: DriveTrain
@@ -36,6 +35,7 @@ class MyRobot(magicbot.MagicRobot):
 
     def __init__(self):
         super().__init__()
+        # Define simple variables here.
         self.estop: bool = False
         self.lift_setpoints = [2, 26]
         self.lift_setpoint_index = 0
@@ -46,7 +46,9 @@ class MyRobot(magicbot.MagicRobot):
         self.manual_intake = False
         self.changing_angle_manual =  False
         self.extension_setpoint = 0
-
+        self.drivexlimiter = wpimath.filter.SlewRateLimiter(3)
+        self.driveylimiter = wpimath.filter.SlewRateLimiter(3)
+        self.driveanglelimiter = wpimath.filter.SlewRateLimiter(3)
 
 
     def createObjects(self):
@@ -58,25 +60,20 @@ class MyRobot(magicbot.MagicRobot):
         SmartDashboard.putBoolean("Drive Train in Slow Mode", False)
 
         # Create motors and stuff here
+        # Create command based XBox controllers
         self.driveController = CommandXboxController(0)
         self.operatorController = CommandXboxController(1)
 
+        # Used purely for visualization
         self.field = Field2d()
+        SmartDashboard.putData("Field", self.field)
 
+        # Initialize the robot subsystems
         self.driveTrain = DriveTrain(self.field)
-
         self.lift = Lift()
-
         self.arm = Arm()
-
         self.climber = Climber()
-
         self.grabber = Grabber()
-
-        self.autoChooser = AutoBuilder.buildAutoChooser("Test Auton")
-        SmartDashboard.putData("Path Planner Auton (Not Functional)", self.autoChooser)
-
-        self.automodes = AutonomousModeSelector("Basic Auto")
 
         #region operatorControls
         self.operatorController.povUp().onTrue(
@@ -280,10 +277,32 @@ class MyRobot(magicbot.MagicRobot):
 
         #region driverControl
 
-        lx = self.driveController.getLeftX()
-        ly = self.driveController.getLeftY() * (-1)
+        # Get the x speed. This needs to be inverted xbox controllers give a negative value when pushed forward.
+        # We are also flipping the axes around since the +x coordinate is pointing away from the driver station.
+        #region drive
+        x_speed = (
+            -self.drivexlimiter.calculate(
+                wpimath.applyDeadband(self.driveController.getLeftY(), 0.02)
+            ) * kMaxSpeed
+        )
 
-        rotation = self.driveController.getRightX()
+        y_speed = (
+            -self.driveylimiter.calculate(
+                wpimath.applyDeadband(self.driveController.getLeftX(), 0.02)
+            ) * kMaxSpeed
+        )
+
+        rot_speed = (
+            -self.driveanglelimiter.calculate(
+                wpimath.applyDeadband(self.driveController.getRightX(), 0.02)
+            ) * kMaxSpeed
+        )
+        SmartDashboard.putNumber("x", x_speed)
+        SmartDashboard.putNumber("y", y_speed)
+        SmartDashboard.putNumber("z", rot_speed)
+        self.driveTrain.driveRobot(x_speed, y_speed, rot_speed, self.control_loop_wait_time, field_relative=True)
+        #endregion
+
         climb = self.operatorController.getRightY()
 
         l_trigger = self.driveController.getLeftTriggerAxis()
@@ -291,12 +310,9 @@ class MyRobot(magicbot.MagicRobot):
 
         l_trigger = MyRobot.deadband(l_trigger, 0.2)
         r_trigger = MyRobot.deadband(r_trigger, 0.2)
-        lx = MyRobot.deadband(lx)
-        ly = MyRobot.deadband(ly)
-        rotation = MyRobot.deadband(rotation)
+
         climb = MyRobot.deadband(climb)
 
-        rotation = rotation*2*math.pi/4 * (-1)
 
         if r_trigger > 0:
             self.coral_intake_fsm.intake()
@@ -310,35 +326,13 @@ class MyRobot(magicbot.MagicRobot):
             self.grabber.intake_percent = 0.02
             self.grabber.kicker_percent = 0
 
-        if lx != 0:
-            angle = math.atan(abs(ly)/abs(lx))
-        else:
-            if ly >= 0:
-                angle = math.pi/2
-            else:
-                angle = math.pi/2*3
-
-        angle = angle / math.pi * 180
-
-        if lx < 0 < ly:
-            angle = 180 - angle
-        elif lx < 0 and ly < 0:
-            angle = angle + 180
-        elif lx > 0 > ly:
-            angle = 360 - angle
-
         if self.lift_setpoint_index > 0 or self.arm_setpoint_index > 2:
             speed_scalar = 0.5
             slow = True
         else:
             speed_scalar = 1
             slow = False
-        speed = ChassisSpeeds(vx=lx*teleopSpeedScaling*speed_scalar, vy=ly*teleopSpeedScaling*speed_scalar, omega=rotation*teleopSpeedScaling*speed_scalar)
-        SmartDashboard.putNumber("Desired X Velocity", lx*teleopSpeedScaling*speed_scalar)
-        SmartDashboard.putNumber("Desired Y Velocity", ly*teleopSpeedScaling*speed_scalar)
-        SmartDashboard.putNumber("Desired Rotational Velocity", rotation*teleopSpeedScaling*speed_scalar)
-        SmartDashboard.putBoolean("Drive Train in Slow Mode", slow)
-        self.driveTrain.driveRobotRelative(speed)
+
         self.climber.percent_output = climb
         #endregion
 
