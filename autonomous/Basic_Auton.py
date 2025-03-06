@@ -10,7 +10,7 @@ from constants import autonSpeedScaling
 
 class BasicAuto(AutonomousStateMachine):
     MODE_NAME = "Basic Autonomous"
-    DEFAULT = True
+    DEFAULT = False
     DISABLED = False
 
     lift: Lift
