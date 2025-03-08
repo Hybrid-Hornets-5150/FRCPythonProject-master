@@ -1,24 +1,28 @@
-import math
+from collections import namedtuple
 
 import rev
-from commands2 import Subsystem
-from wpilib import DriverStation, Field2d, SmartDashboard, DutyCycleEncoder
 import wpimath.units
-from pathplannerlib.auto import AutoBuilder
-from pathplannerlib.config import RobotConfig, PIDConstants
-from pathplannerlib.controller import PPHolonomicDriveController
+from commands2 import Subsystem
 from phoenix6.hardware import Pigeon2
-from rev import SparkMax, SparkMaxConfig, SparkBaseConfig, SparkBase, SparkLowLevel, SparkClosedLoopController, \
-    ClosedLoopConfig, SparkMaxSim, AbsoluteEncoderConfig, RelativeEncoder
-from wpimath.geometry import Translation2d, Pose2d, Rotation2d
-from wpimath.kinematics import SwerveDrive4Kinematics, ChassisSpeeds, SwerveDrive4Odometry, SwerveModulePosition, \
+from photonlibpy import PhotonCamera, PhotonPoseEstimator, PoseStrategy
+from rev import SparkMax, SparkMaxConfig, SparkBaseConfig, SparkBase, SparkLowLevel
+from robotpy_apriltag import AprilTagFieldLayout, AprilTagField
+from wpilib import DriverStation, Field2d, SmartDashboard, Timer
+from wpimath._controls._controls.estimator import SwerveDrive4PoseEstimator
+from wpimath.geometry import Translation2d, Pose2d, Rotation2d, Transform3d, Translation3d, Rotation3d
+from wpimath.kinematics import SwerveDrive4Kinematics, ChassisSpeeds, SwerveModulePosition, \
     SwerveModuleState
 
-from helpers import Component
-from collections import namedtuple
 from constants import *
 
 MotorConfig = namedtuple("MotorConfig", ["kP", "kI", "kD"])
+
+kMaxSpeed = 3  # Meters per second
+kRobotToCamera = Transform3d(
+    Translation3d(-0.16, 0.24, 0.45),  # Robot relative coordinates of the camera's mounting position.
+    Rotation3d.fromDegrees(0.0, 20.0, 0.0)  # Robot relative rotation of the camera mounting position.
+)
+
 
 # Class to create a single swerve module
 class SwerveModule(Subsystem):
@@ -30,7 +34,6 @@ class SwerveModule(Subsystem):
         self.drive_motor = SparkMax(drive_can_id, SparkLowLevel.MotorType.kBrushless)
         self._swerve_controller = self.swerve_motor.getClosedLoopController()
         self._drive_controller = self.drive_motor.getClosedLoopController()
-
         self.swerve_motor_config = SparkMaxConfig()
 
         self.encoder_type = encoder_type
@@ -50,9 +53,9 @@ class SwerveModule(Subsystem):
     def setup(self):
         self.swerve_motor_config.setIdleMode(SparkBaseConfig.IdleMode.kBrake).smartCurrentLimit(50).inverted(False)
         self.swerve_motor_config.closedLoop.pid(SwervePID.kP, SwervePID.kI, SwervePID.kD,
-                                           rev.ClosedLoopSlot.kSlot0)
+                                                rev.ClosedLoopSlot.kSlot0).setFeedbackSensor(
+            self.encoder_type).positionWrappingEnabled(True).positionWrappingMaxInput(1).positionWrappingMinInput(0)
         self.swerve_motor_config.absoluteEncoder.inverted(True)
-        self.swerve_motor_config.closedLoop.setFeedbackSensor(self.encoder_type).positionWrappingEnabled(True).positionWrappingInputRange(0,1)
         self.swerve_motor.configure(self.swerve_motor_config, SparkBase.ResetMode.kResetSafeParameters,
                                     SparkBase.PersistMode.kPersistParameters)
 
@@ -71,47 +74,47 @@ class SwerveModule(Subsystem):
         else:
             config.setIdleMode(config.IdleMode.kCoast)
         self.coasted ^= 1
-        self.swerve_motor.configure(config, SparkBase.ResetMode.kResetSafeParameters, SparkBase.PersistMode.kNoPersistParameters)
+        self.swerve_motor.configure(config, SparkBase.ResetMode.kResetSafeParameters,
+                                    SparkBase.PersistMode.kNoPersistParameters)
 
     @staticmethod
     def motor_to_meters(position_rotations, circumference, gear_ratio):
         return position_rotations * (circumference / gear_ratio)
 
-    def reset_encoder(self):
-        if self.encoder_type == rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder:
-            self.swerve_motor_config.absoluteEncoder.zeroOffset(0)
-            self.swerve_motor.configure(self.swerve_motor_config, SparkBase.ResetMode.kResetSafeParameters,
-                                        SparkBase.PersistMode.kNoPersistParameters)
-            offset = self.swerve_encoder.getPosition()
-            self.swerve_motor_config.absoluteEncoder.zeroOffset(offset)
-            self.swerve_motor.configure(self.swerve_motor_config, SparkBase.ResetMode.kResetSafeParameters,
-                                        SparkBase.PersistMode.kPersistParameters)
-        else:
-            self.swerve_encoder.setPosition(0)
-
+    # Field relative
     def get_position(self) -> SwerveModulePosition:
-        rotations = self.drive_motor.getEncoder().getPosition() # How many revolutions has the drive motor done
-        angle_rotations = self.swerve_encoder.getPosition()
-        angle = Rotation2d(wpimath.units.rotationsToRadians(angle_rotations))
-        return SwerveModulePosition(math.pi*wpimath.units.inchesToMeters(3)*rotations/DrivePID.Ratio, angle)
+        # Get the total distance travelled by the drive motor and the current angle of the swerve encoder.
+        # This information is used for odometry, which is in turn used for all automatic control.
+        rotations = self.drive_motor.getEncoder().getPosition()  # How many revolutions has the drive motor done
+        angle_rotations = self.get_swerve_rotations()
+        angle = Rotation2d.fromRotations(angle_rotations - 0.25)
+        SmartDashboard.putNumber(f"ID {self.swerve_motor.getDeviceId()} Pos", angle.degrees())
+        return SwerveModulePosition(math.pi * wpimath.units.inchesToMeters(3) * rotations / DrivePID.Ratio, angle)
 
     def get_state(self) -> SwerveModuleState:
-        drive_motor_rps = self.drive_motor.getEncoder().getVelocity()*60
-        angle_rotations = self.swerve_motor.getEncoder().getPosition()
-        angle = Rotation2d(wpimath.units.rotationsToRadians(angle_rotations))
-        return SwerveModuleState(SwerveModule.motor_to_meters(drive_motor_rps, DrivePID.Circumference, DrivePID.Ratio), angle)
+        drive_motor_rps = self.drive_motor.getEncoder().getVelocity() * 60
+        angle_rotations = self.get_swerve_rotations()
+        angle = Rotation2d.fromRotations(angle_rotations)
+        return SwerveModuleState(SwerveModule.motor_to_meters(drive_motor_rps, DrivePID.Circumference, DrivePID.Ratio),
+                                 angle)
 
     def set_state(self, state: SwerveModuleState):
-        rotations = wpimath.units.radiansToRotations(state.angle.radians())
+        # Get the current rotation and optimize the minimum rotation required to get the desired rotation
+        # This also automatically inverts the speed of the motor if required in order to achieve the shortest swerve angle delta
+        current_rotation = wpimath.geometry.Rotation2d.fromRotations(self.get_swerve_rotations())
+        state.optimize(current_rotation)
+        # Slow the drive speed relative to the angle error. This eliminates the jerking motion that we saw during week 1
+        state.cosineScale(current_rotation)
+
+        # Convert the desired state data into data for our hardware
         speed = state.speed
-        self.set_swerve_rotations(rotations)
+        self.set_swerve_rotations(state.angle)
         self.set_drive_speed(speed)
 
-    def set_swerve_rotations(self, rot):
-        rot += self.angle_offset
-        if rot > 1:
-            rot -= 1
-        self._swerve_controller.setReference(rot, SparkLowLevel.ControlType.kPosition, rev.ClosedLoopSlot.kSlot0)
+    def set_swerve_rotations(self, rot: Rotation2d):
+        target = units.radiansToRotations(rot.radians())  # Convert a rotation2d into rotations
+        target += self.angle_offset
+        self._swerve_controller.setReference(target, SparkLowLevel.ControlType.kPosition, rev.ClosedLoopSlot.kSlot0)
 
     def set_drive_speed(self, speed: wpimath.units.meters_per_second):
         # Convert from feet per second to RPM
@@ -119,66 +122,70 @@ class SwerveModule(Subsystem):
         # speed = speed * DrivePID.Ratio  #convert wheel RPM to motor RPM
         # self._drive_controller.setReference(speed, SparkLowLevel.ControlType.kVelocity, rev.ClosedLoopSlot.kSlot0, arbFeedforward=DrivePID.kFF)
         speed_scalar = wpimath.units.feetToMeters(20.86)
-        self.drive_motor.set(speed/speed_scalar)
+        self.drive_motor.set(speed / speed_scalar)
 
     def on_disable(self):
         self.swerve_motor.disable()
         self.drive_motor.disable()
 
-# Class to combine all swerve modules and drive the robot.
-#TODO, Chassis needs "getPose" "resetPose" "getRobotRelativeSpeeds" "getCurrentSpeeds" "driveRobotRelative"
-# See https://pathplanner.dev/pplib-getting-started.html#install-pathplannerlib for details
-class DriveTrain(Subsystem):
+    # Robot Relative
+    def get_swerve_rotations(self):
+        real_rotation = self.swerve_encoder.getPosition() - self.angle_offset
+        real_rotation = wpimath.inputModulus(real_rotation, 0, 1)
+        return real_rotation
 
+
+# Class to combine all swerve modules and drive the robot.
+class DriveTrain(Subsystem):
     swerve: dict[str: SwerveModule]
-    def __init__(self, field: Field2d):
+
+    def __init__(self, field: Field2d, camera: PhotonCamera):
         super().__init__()
         self.field = field
 
         self.gear = 1
         self.max_rot = 0
 
-        self.pose = Pose2d(0,0,0)
+        # Define pose related objects
+        field_layout = AprilTagFieldLayout.loadField(AprilTagField.kDefaultField)
+        self.pose = Pose2d(0, 0, 0)
+        self.camera = camera
+        self.pose_estimator = PhotonPoseEstimator(
+            field_layout,
+            PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR,
+            self.camera,
+            kRobotToCamera
+        )
 
-        self.swerve = {"NW": SwerveModule(CanIDs.SwerveSparkNW, CanIDs.DriveSparkNW, rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.5),
-                       "NE": SwerveModule(CanIDs.SwerveSparkNE, CanIDs.DriveSparkNE, rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.75),
-                       "SW": SwerveModule(CanIDs.SwerveSparkSW, CanIDs.DriveSparkSW, rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.25),
-                       "SE": SwerveModule(CanIDs.SwerveSparkSE, CanIDs.DriveSparkSE, rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0)}
+        self.swerve = {"NW": SwerveModule(CanIDs.SwerveSparkNW, CanIDs.DriveSparkNW,
+                                          rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.5),
+                       "NE": SwerveModule(CanIDs.SwerveSparkNE, CanIDs.DriveSparkNE,
+                                          rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.75),
+                       "SW": SwerveModule(CanIDs.SwerveSparkSW, CanIDs.DriveSparkSW,
+                                          rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0.25),
+                       "SE": SwerveModule(CanIDs.SwerveSparkSE, CanIDs.DriveSparkSE,
+                                          rev.ClosedLoopConfig.FeedbackSensor.kAbsoluteEncoder, 0)}
 
         self.swervepositions = {"NW": Translation2d(-centerPoint[0], centerPoint[1]),
                                 "NE": Translation2d(centerPoint[0], centerPoint[1]),
                                 "SW": Translation2d(-centerPoint[0], -centerPoint[1]),
                                 "SE": Translation2d(centerPoint[0], -centerPoint[1])}
         self.kinematics = SwerveDrive4Kinematics(*self.swervepositions.values())
-        self.speed = ChassisSpeeds(0,0,0)
-        self.stopdrive = ChassisSpeeds(0,0,0)
+        self.speed = ChassisSpeeds(0, 0, 0)
+        self.stopdrive = ChassisSpeeds(0, 0, 0)
         self.running = False
 
         self.gyro = Pigeon2(CanIDs.Gyro, "rio")
 
-        self.odometry = SwerveDrive4Odometry(
+        self.odometry = SwerveDrive4PoseEstimator(
             self.kinematics, self.gyro.getRotation2d(),
             (
                 self.swerve["NW"].get_position(),
                 self.swerve["NE"].get_position(),
                 self.swerve["SW"].get_position(),
                 self.swerve["SE"].get_position()
-            ))
-
-        config = RobotConfig.fromGUISettings()
-
-        AutoBuilder.configure(
-            self.getPose,
-            self.resetPose,
-            self.getRobotRelativeSpeeds,
-            lambda speeds, feedfowards: self.driveRobotRelative(speeds),
-            PPHolonomicDriveController(
-                PIDConstants(5.0, 0, 0),
-                PIDConstants(5.0, 0, 0)
             ),
-            config,
-            self.shouldFlipPath,
-            self
+            self.pose
         )
 
     @staticmethod
@@ -193,7 +200,7 @@ class DriveTrain(Subsystem):
             self.swerve[mod].drive_motor.set(percent)
 
     def getPose(self):
-        return self.odometry.getPose()
+        return self.odometry.getEstimatedPosition()
 
     def resetPose(self, pose: Pose2d):
         self.odometry.resetPose(pose)
@@ -201,13 +208,28 @@ class DriveTrain(Subsystem):
     def getRobotRelativeSpeeds(self):
         return self.kinematics.toChassisSpeeds(self.get_module_states())
 
-    def driveRobotRelative(self, speed: ChassisSpeeds):
-        nw, ne, sw, se = self.kinematics.toSwerveModuleStates(speed)
-        self.swerve["NW"].set_state(nw)
-        self.swerve["NE"].set_state(ne)
-        self.swerve["SW"].set_state(sw)
-        self.swerve["SE"].set_state(se)
+    # Estimate the robots pose from vision measurements
+    def getEstimatedVisionPose(self, previous_estimated_pose):
+        #self.pose_estimator.lastPose = previous_estimated_pose
+        result = self.camera.getLatestResult()
+        return self.pose_estimator.update(self.camera.getLatestResult())
 
+    def driveRobot(self, vx, vy, vrot, period, field_relative=False, driver_relative=False):
+
+        # Handle all of the kinematics to drive the robot. Our coordinate system is messed up, which is why the vx and
+        # vy are mixed up. This works for now, but might be worth fixing later for completeness' sake
+        states = self.kinematics.toSwerveModuleStates(
+            ChassisSpeeds.discretize(
+                ChassisSpeeds.fromFieldRelativeSpeeds(-vy, vx, vrot, self.gyro.getRotation2d())
+                if field_relative
+                else ChassisSpeeds(-vy, vx, vrot), period
+            )
+        )
+        SwerveDrive4Kinematics.desaturateWheelSpeeds(states, kMaxSpeed)  # Limit speeds without changing the trajectory
+        self.swerve["NW"].set_state(states[0])
+        self.swerve["NE"].set_state(states[1])
+        self.swerve["SW"].set_state(states[2])
+        self.swerve["SE"].set_state(states[3])
 
     def on_disable(self):
         self.set_angle(0)
@@ -222,20 +244,21 @@ class DriveTrain(Subsystem):
         self.running = True
 
     def periodic(self):
+        # Add the estimated vision pose if the camera sees any vision targets
+        pose_estimate = self.getEstimatedVisionPose(self.pose)
+        if pose_estimate is not None:
+            self.odometry.addVisionMeasurement(pose_estimate.estimatedPose.toPose2d(), Timer.getFPGATimestamp())
+
+
+        # Update the robot pose based on available sensor data
         self.pose = self.odometry.update(self.gyro.getRotation2d(), self.get_module_positions())
-        data = [self.pose.X(), self.pose.Y(), self.pose.rotation().degrees()]
-        SmartDashboard.putNumberArray("Module Distances", data)
-        SmartDashboard.putNumber("Gyro Heading", self.gyro.getRotation2d().degrees())
-        vel = self.gyro.get_angular_velocity_z_world().value
-        if vel > self.max_rot:
-            self.max_rot = vel
-        SmartDashboard.putNumber("Gyro Z Vel", self.max_rot)
         self.field.setRobotPose(self.pose)
+        SmartDashboard.putNumber("Gyro Heading", self.gyro.getRotation2d().degrees())
 
     def set_angle(self, angle):
         if self.running:
             for drive in self.swerve.values():
-                drive.set_swerve_rotations(angle/360)
+                drive.set_swerve_rotations(Rotation2d.fromDegrees(angle))
 
     def get_average_distance(self):
         positions = self.get_module_positions()
@@ -246,4 +269,4 @@ class DriveTrain(Subsystem):
         return avg
 
     def represent_pose(self):
-        return f"{self.odometry.getPose().X()}, {self.odometry.getPose().Y()}, {self.odometry.getPose().Y()}"
+        return f"{self.odometry.getEstimatedPosition().X()}, {self.odometry.getEstimatedPosition().Y()}, {self.odometry.getEstimatedPosition().Y()}"

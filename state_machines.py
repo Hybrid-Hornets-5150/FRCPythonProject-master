@@ -1,7 +1,8 @@
 from magicbot import StateMachine, state, timed_state
+from wpimath._controls._controls.controller import HolonomicDriveController
 
 from components.chassis import DriveTrain
-from components.lift import Grabber, Arm
+from components.lift import Grabber, Arm, Lift
 
 
 class IntakeCoral(StateMachine):
@@ -33,11 +34,6 @@ class IntakeCoral(StateMachine):
     def hold(self):
         self.grabber.intake_percent = self.percent_target
 
-    #Currently unused
-    @state()
-    def full_speed(self):
-        self.grabber.intake_percent = self.percent_target
-        self.grabber.kicker_percent = 0.05
 
 class CheckAlignment(StateMachine):
     arm: Arm
@@ -59,7 +55,6 @@ class CheckAlignment(StateMachine):
     def done(self):
         super().done()
         self.arm.arm_angle = self.original_angle
-
 
 class ClearReef(StateMachine):
     arm: Arm
@@ -117,10 +112,10 @@ class ScoreCoral(StateMachine):
         self.grabber.intake_percent = -0.2
 
     @timed_state(duration=1, next_state="final")
-    def run_away(self): #Like the brave Sir Robin
+    def run_away(self): # Like the brave Sir Robin
         self.grabber.intake_percent = -0.2
         self.driveTrain.set_angle(90)
-        self.driveTrain.drive_all_percent(-0.1)
+        self.driveTrain.drive_all_percent(-0.2)
 
     @state()
     def final(self):
@@ -131,3 +126,66 @@ class ScoreCoral(StateMachine):
         self.arm.arm_angle = self.initial_angle
         self.grabber.kicker_percent = 0
         self.grabber.intake_percent = 0
+
+# class DriveRobotToPoint(StateMachine):
+#     driveTrain: DriveTrain
+#     controller: HolonomicDriveController
+#
+#
+
+class ScoreLevelFour(StateMachine):
+    grabber: Grabber
+    arm: Arm
+    driveTrain: DriveTrain
+    lift: Lift
+    
+    
+    starting_lift_position = 0
+    starting_arm_angle = 0
+    def run(self):
+        self.engage()
+        
+    @state(first=True)
+    def initialize(self):
+        self.starting_lift_position = self.lift.get_height()
+        self.starting_arm_angle = self.arm.arm_angle
+        self.lift.set_height(24)
+        self.arm.arm_angle = 60
+        self.next_state("align_vision_target")
+
+    @state()
+    def align_vision_target(self):
+
+        self.next_state("wait_for_pos")
+
+
+    @state()
+    def wait_for_pos(self):
+
+        if self.arm.arm_angle >= 55:
+            if self.lift.get_height() >= 22:
+                self.next_state("goto_scoring_pos")
+
+    @state()
+    def goto_scoring_pos(self):
+        #todo: drive into position
+        # Wait for position
+        self.next_state("start_score")
+
+
+    @state()
+    def start_score(self):
+        self.arm.arm_angle = 55
+
+        if abs(self.arm.arm_angle -55) <= 1:
+            self.next_state("score")
+
+    @state()
+    def score(self):
+        pass
+
+
+    def done(self) -> None:
+        super().done()
+        self.lift.set_height(self.starting_lift_position)
+        self.arm.arm_angle = self.starting_arm_angle

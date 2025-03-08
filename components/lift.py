@@ -175,8 +175,8 @@ class Arm(Subsystem):
 
         # Extension controller magic motion configs
         motion_magic_configs = talon_configs.motion_magic
-        motion_magic_configs.motion_magic_cruise_velocity = 300
-        motion_magic_configs.motion_magic_acceleration = 100
+        motion_magic_configs.motion_magic_cruise_velocity = 600
+        motion_magic_configs.motion_magic_acceleration = 300
         motion_magic_configs.motion_magic_jerk = 1000
 
         output_config = talon_configs.motor_output
