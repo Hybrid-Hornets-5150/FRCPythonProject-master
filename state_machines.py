@@ -1,5 +1,10 @@
 from magicbot import StateMachine, state, timed_state
+from wpilib import Timer
 from wpimath._controls._controls.controller import HolonomicDriveController
+from wpimath._controls._controls.trajectory import Trajectory, TrajectoryGenerator, TrapezoidProfileRadians, \
+    TrajectoryConfig
+from wpimath.geometry import Translation2d, Rotation2d, Pose2d, Transform2d
+from wpimath.units import feetToMeters
 
 from components.chassis import DriveTrain
 from components.lift import Grabber, Arm, Lift
@@ -127,11 +132,54 @@ class ScoreCoral(StateMachine):
         self.grabber.kicker_percent = 0
         self.grabber.intake_percent = 0
 
-# class DriveRobotToPoint(StateMachine):
-#     driveTrain: DriveTrain
-#     controller: HolonomicDriveController
-#
-#
+class TransformRobot(StateMachine):
+    """Make the robot drive by a certain translation.
+    """
+    driveTrain: DriveTrain
+    controller: HolonomicDriveController
+
+    timer = Timer()
+    trajectory = Trajectory()
+    heading = Rotation2d()
+
+    def set_target(self, target: Transform2d):
+        pose = self.driveTrain.getPose()
+        self.trajectory = TrajectoryGenerator.generateTrajectory(
+            pose,
+            [],
+            pose.transformBy(target),
+            TrajectoryConfig(feetToMeters(3), feetToMeters(3))
+        )
+        self.heading = pose.rotation().rotateBy(target.rotation())
+
+    def run(self):
+        self.engage()
+
+    @state(first=True)
+    def initialize(self):
+        self.timer = Timer()
+        self.timer.start()
+        self.next_state("drive")
+
+    @state()
+    def drive(self):
+        if self.timer.get() < self.trajectory.totalTime():
+            next_state = self.trajectory.sample(self.timer.get())
+            calculated_robot_speed = self.controller.calculate(
+                self.driveTrain.getPose(),
+                next_state,
+                self.heading
+            )
+            vx = calculated_robot_speed.vx
+            vy = calculated_robot_speed.vy
+            vrot = calculated_robot_speed.omega
+            self.driveTrain.driveRobot(vx, vy, vrot, 0.02, field_relative=True)
+        else:
+            self.done()
+
+    def done(self):
+        self.timer.stop()
+
 
 class ScoreLevelFour(StateMachine):
     grabber: Grabber
@@ -189,3 +237,4 @@ class ScoreLevelFour(StateMachine):
         super().done()
         self.lift.set_height(self.starting_lift_position)
         self.arm.arm_angle = self.starting_arm_angle
+

@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import choreo
 import magicbot
 import wpimath.filter
+from choreo import SwerveTrajectory
 from commands2 import *
 from commands2.button import CommandXboxController
+from wpilib import SendableChooser
 from wpimath._controls._controls.controller import HolonomicDriveController, PIDController, ProfiledPIDControllerRadians
 from wpimath._controls._controls.trajectory import TrapezoidProfileRadians
 
@@ -24,6 +28,8 @@ class MyRobot(magicbot.MagicRobot):
     # Other
     field: Field2d
     camera: PhotonCamera
+    trajectory: SwerveTrajectory
+    traj_chooser: SendableChooser
 
     # Subsystems
     driveTrain: DriveTrain
@@ -68,7 +74,15 @@ class MyRobot(magicbot.MagicRobot):
             ProfiledPIDControllerRadians(2, 0, 0.1, TrapezoidProfileRadians.Constraints(3, 3))
         )
 
-        # Load choreo trajectory
+        self.traj_chooser = SendableChooser()
+        # Load choreo trajectories into chooser
+        choreopath = Path("deploy/choreo")
+        for file in choreopath.iterdir():
+            file: Path
+            if file.suffix == ".traj":
+                self.traj_chooser.addOption(file.stem, file.stem)
+        SmartDashboard.putData("Trajectory Choices", self.traj_chooser)
+
         try:
             self.trajectory = choreo.load_swerve_trajectory("test_auton_lower (three score)")
         except ValueError:
