@@ -27,6 +27,7 @@ class ToggleSwerveRotateCoast(Command):
     def runsWhenDisabled(self) -> bool:
         return True
 
+
 class LiftVelocity(Command):
     lift: Lift
 
@@ -41,6 +42,7 @@ class LiftVelocity(Command):
 
     def isFinished(self) -> bool:
         return True
+
 
 class LiftTo(Command):
     lift: Lift
@@ -60,8 +62,10 @@ class LiftTo(Command):
         else:
             return False
 
+
 class RunIntake(Command):
     grabber: Grabber
+
     def __init__(self, percent, grabber):
         self.grabber = grabber
         self.addRequirements(self.grabber)
@@ -74,23 +78,6 @@ class RunIntake(Command):
     def isFinished(self) -> bool:
         return True
 
-class SetExtension(Command):
-    arm: Arm
-
-    def __init__(self, extension, arm):
-        self.arm = arm
-        self.extension_target = extension
-        super().__init__()
-
-    def initialize(self):
-        self.arm.extension = self.extension_target
-
-    def isFinished(self) -> bool:
-        if abs(self.arm.extension - self.extension_target) < 1:
-            print("At Target")
-            return True
-        else:
-            return False
 
 class SetArmAngle(Command):
     def __init__(self, degrees, arm):
@@ -108,17 +95,20 @@ class SetArmAngle(Command):
         else:
             return False
 
+
 class SetArmVoltage(Command):
     def __init__(self, volts, arm):
         self.volts = volts
         self.arm = arm
         self.addRequirements(self.arm)
         super().__init__()
+
     def initialize(self):
         self.arm.arm_voltage = self.volts
 
     def isFinished(self) -> bool:
         return True
+
 
 class SetKickerPercent(Command):
     def __init__(self, percent, grabber):
@@ -133,8 +123,10 @@ class SetKickerPercent(Command):
     def isFinished(self) -> bool:
         return True
 
+
 class AddArmAngle(Command):
     """Continuous command, doesn't work like it"""
+
     def __init__(self, degrees, arm):
         super().__init__()
         self.degrees = degrees

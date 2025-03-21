@@ -1,3 +1,4 @@
+import time
 from collections import namedtuple
 
 import rev
@@ -19,8 +20,8 @@ MotorConfig = namedtuple("MotorConfig", ["kP", "kI", "kD"])
 
 kMaxSpeed = 3  # Meters per second
 kRobotToCamera = Transform3d(
-    Translation3d(-0.16, 0.24, 0.45),  # Robot relative coordinates of the camera's mounting position.
-    Rotation3d.fromDegrees(0.0, 20.0, 0.0)  # Robot relative rotation of the camera mounting position.
+    Translation3d(-0.13, 0.285, 0.44),  # Robot relative coordinates of the camera's mounting position.
+    Rotation3d.fromDegrees(0.0, 0.0, 0.0)  # Robot relative rotation of the camera mounting position.
 )
 
 
@@ -60,7 +61,7 @@ class SwerveModule(Subsystem):
                                     SparkBase.PersistMode.kPersistParameters)
 
         drive_motor_config = SparkMaxConfig()
-        drive_motor_config.apply(self.swerve_motor_config).setIdleMode(SparkBaseConfig.IdleMode.kCoast)
+        drive_motor_config.apply(self.swerve_motor_config).setIdleMode(SparkBaseConfig.IdleMode.kBrake)
         drive_motor_config.closedLoop.setFeedbackSensor(drive_motor_config.closedLoop.FeedbackSensor.kPrimaryEncoder)
         # closedLoop is the accessor for the closed loop controller configuration
         drive_motor_config.closedLoop.pid(DrivePID.kP, DrivePID.kI, DrivePID.kD, rev.ClosedLoopSlot.kSlot0)
@@ -176,6 +177,10 @@ class DriveTrain(Subsystem):
         self.running = False
 
         self.gyro = Pigeon2(CanIDs.Gyro, "rio")
+        if DriverStation.getAlliance() == DriverStation.Alliance.kBlue:
+            self.gyro.set_yaw(180)
+        else:
+            self.gyro.set_yaw(0)
 
         self.odometry = SwerveDrive4PoseEstimator(
             self.kinematics, self.gyro.getRotation2d(),
@@ -210,14 +215,18 @@ class DriveTrain(Subsystem):
 
     # Estimate the robots pose from vision measurements
     def getEstimatedVisionPose(self, previous_estimated_pose):
-        #self.pose_estimator.lastPose = previous_estimated_pose
-        result = self.camera.getLatestResult()
+        # self.pose_estimator.lastPose = previous_estimated_pose
         return self.pose_estimator.update(self.camera.getLatestResult())
 
     def driveRobot(self, vx, vy, vrot, period, field_relative=False, driver_relative=False):
 
         # Handle all of the kinematics to drive the robot. Our coordinate system is messed up, which is why the vx and
         # vy are mixed up. This works for now, but might be worth fixing later for completeness' sake
+        if driver_relative and field_relative and DriverStation.getAlliance() == DriverStation.Alliance.kRed:
+            vx = -vx
+            vy = -vy
+            vrot = -vrot
+
         states = self.kinematics.toSwerveModuleStates(
             ChassisSpeeds.discretize(
                 ChassisSpeeds.fromFieldRelativeSpeeds(-vy, vx, vrot, self.gyro.getRotation2d())
@@ -248,7 +257,9 @@ class DriveTrain(Subsystem):
         pose_estimate = self.getEstimatedVisionPose(self.pose)
         if pose_estimate is not None:
             self.odometry.addVisionMeasurement(pose_estimate.estimatedPose.toPose2d(), Timer.getFPGATimestamp())
-
+            SmartDashboard.putBoolean("Sees Tag", True)
+        else:
+            SmartDashboard.putBoolean("Sees Tag", False)
 
         # Update the robot pose based on available sensor data
         self.pose = self.odometry.update(self.gyro.getRotation2d(), self.get_module_positions())
