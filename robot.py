@@ -17,7 +17,7 @@ from commands import LiftVelocity, RunIntake, SetKickerPercent, AddArmAngle
 from components.chassis import *
 from components.climber import Climber
 from components.lift import Lift, Arm, Grabber
-from state_machines import IntakeCoral, ScoreCoral, ScoreCoralRight, IntakeHome
+from state_machines import IntakeCoral, ScoreCoral, ScoreCoralRight, IntakeHome, ScoreCoralLeft
 
 
 class MyRobot(magicbot.MagicRobot):
@@ -45,6 +45,7 @@ class MyRobot(magicbot.MagicRobot):
     coral_intake_fsm: IntakeCoral
     coral_score_fsm: ScoreCoral
     coral_autoscore_right_fsm: ScoreCoralRight
+    coral_autoscore_left_fsm: ScoreCoralLeft
     intake_home: IntakeHome
 
     def __init__(self):
@@ -375,6 +376,11 @@ class MyRobot(magicbot.MagicRobot):
 
     def teleopPeriodic(self):
         # Called every 20ms when teleop runs
+
+        result = self.camera.getLatestResult()
+        best_target = result.getBestTarget()
+        if best_target:
+            SmartDashboard.putNumber("Best Target", float(best_target.fiducialId))
 
         # region operatorControl
 

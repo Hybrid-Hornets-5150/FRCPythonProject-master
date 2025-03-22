@@ -213,7 +213,7 @@ class ScoreCoralRight(StateMachine):
     complete = False
     starting_lift_height = 0
     starting_arm_angle = 0
-    y_offset = 0.01
+    y_offset = 0.0
 
     def run(self):
         self.engage()
@@ -266,7 +266,7 @@ class ScoreCoralRight(StateMachine):
     def stabilize(self):
         print("stabilizing")
         self.lift.set_height(24)
-        self.arm.arm_angle = 55
+        self.arm.arm_angle = 60
         self.target_right()
         pose_err = self.target_pose.relativeTo(self.driveTrain.getPose())
         x_err = pose_err.x
@@ -301,6 +301,130 @@ class ScoreCoralRight(StateMachine):
     def score(self):
         self.arm.arm_angle = 25
 
+    @timed_state(duration=1.0, next_state="finished")
+    def run_away(self):
+        self.grabber.intake_percent = -0.5
+        pose_err = self.target_pose.relativeTo(self.driveTrain.getPose())
+        x_err = pose_err.x
+        y_err = pose_err.y
+        angle_err = pose_err.rotation().radians()
+        self.driveTrain.driveRobot(clamp(x_err * 2, 1), clamp(y_err * 2, 1), clamp(angle_err * 2, 1), 0.02,
+                                   field_relative=False)
+
+    @state()
+    def finished(self):
+        self.driveTrain.driveRobot(0, 0, 0, 0.02)
+
+    def done(self):
+        super().done()
+        self.grabber.intake_percent = 0.02
+        self.lift.set_height(self.starting_lift_height)
+        self.arm.arm_angle = self.starting_arm_angle
+        self.complete = True
+
+
+class ScoreCoralLeft(StateMachine):
+    """Make the robot drive by a certain translation. This is used extensively by the vision tracking so that the robot
+    can reliably auto-align after a target leaves the FOV.
+    """
+    driveTrain: DriveTrain
+    field: Field2d
+    camera: PhotonCamera
+    lift: Lift
+    arm: Arm
+    grabber: Grabber
+
+    target_pose = Pose2d()
+    complete = False
+    starting_lift_height = 0
+    starting_arm_angle = 0
+    y_offset = -0.37
+
+    def run(self):
+        self.engage()
+
+    def set_transform(self, transform):
+        start = self.driveTrain.getPose()
+        blank_pose = Pose2d(start.translation(), Rotation2d(0))
+        blank_pose = blank_pose.transformBy(transform)
+        blank_pose = blank_pose.rotateAround(start.translation(), start.rotation())
+        self.target_pose = blank_pose
+
+    def calculate_offset_pose(self):
+        start = self.target_pose
+        blank_pose = Pose2d(start.translation(), Rotation2d(0))
+        blank_pose = blank_pose.transformBy(Transform2d(0.5, 0, 0))
+        blank_pose = blank_pose.rotateAround(start.translation(), start.rotation())
+        return blank_pose
+
+    def target_right(self):
+        result = self.camera.getLatestResult()
+        best_target = result.getBestTarget()
+        if best_target:
+            target_offset = best_target.getBestCameraToTarget()
+            SmartDashboard.putNumber("Target X Offset", target_offset.x)
+            SmartDashboard.putNumber("Target Y Offset", target_offset.y)
+            # Subtract 0.5 from the target position since the alignment function will go 0.5m forward after ligning up
+            relative_x = target_offset.x - 0.29 - 0.5
+            relative_y = target_offset.y + self.y_offset
+            angle_difference = target_offset.rotation().toRotation2d().rotateBy(Rotation2d.fromDegrees(180))
+            relative_rot = angle_difference.radians()
+            # Update our target vector the entire time the camera can see the target
+            self.set_transform(Transform2d(relative_x, relative_y, relative_rot))
+
+    @state(first=True)
+    def initialize(self):
+        self.starting_lift_height = self.lift.get_height()
+        self.starting_arm_angle = self.arm.arm_angle
+        self.target_right()
+        self.complete = False
+        pose_err = self.target_pose.relativeTo(self.driveTrain.getPose())
+        x_err = pose_err.x
+        y_err = pose_err.y
+        angle_err = pose_err.rotation().radians()
+        self.driveTrain.driveRobot(clamp(x_err * 3, 3), clamp(y_err * 3, 3), clamp(angle_err * 2, 3), 0.02,
+                                   field_relative=False)
+        if abs(x_err) < 0.05 and abs(y_err) < 0.05 and abs(angle_err) < 0.09:
+            self.next_state("stabilize")
+
+    @timed_state(duration=1.0, next_state="approach")
+    def stabilize(self):
+        print("stabilizing")
+        self.lift.set_height(24)
+        self.arm.arm_angle = 60
+        self.target_right()
+        pose_err = self.target_pose.relativeTo(self.driveTrain.getPose())
+        x_err = pose_err.x
+        y_err = pose_err.y
+        angle_err = pose_err.rotation().radians()
+        self.driveTrain.driveRobot(clamp(x_err * 2, 3), clamp(y_err * 2, 3), clamp(angle_err * 2, 3), 0.02,
+                                   field_relative=False)
+        if abs(x_err) > 0.05 or abs(y_err) > 0.05 or abs(angle_err) > 0.09:
+            self.next_state_now("initialize")
+
+    @state()
+    def approach(self):
+        pose_err = self.calculate_offset_pose().relativeTo(self.driveTrain.getPose())
+        x_err = pose_err.x
+        y_err = pose_err.y
+        angle_err = pose_err.rotation().radians()
+        self.driveTrain.driveRobot(clamp(x_err * 3, 1), clamp(y_err * 3, 1), clamp(angle_err * 3, 1), 0.02,
+                                   field_relative=False)
+        if abs(x_err) < 0.05 and abs(y_err) < 0.05 and abs(angle_err) < 0.09:
+            self.next_state("hold")
+
+    @timed_state(duration=1.0, next_state="score")
+    def hold(self):
+        pose_err = self.calculate_offset_pose().relativeTo(self.driveTrain.getPose())
+        x_err = pose_err.x
+        y_err = pose_err.y
+        angle_err = pose_err.rotation().radians()
+        self.driveTrain.driveRobot(clamp(x_err * 3, 1), clamp(y_err * 3, 1), clamp(angle_err * 5, 2), 0.02,
+                                   field_relative=False)
+
+    @timed_state(duration=0.75, next_state="run_away")
+    def score(self):
+        self.arm.arm_angle = 25
 
     @timed_state(duration=1.0, next_state="finished")
     def run_away(self):
@@ -314,7 +438,7 @@ class ScoreCoralRight(StateMachine):
 
     @state()
     def finished(self):
-        self.driveTrain.driveRobot(0,0,0,0.02)
+        self.driveTrain.driveRobot(0, 0, 0, 0.02)
 
     def done(self):
         super().done()

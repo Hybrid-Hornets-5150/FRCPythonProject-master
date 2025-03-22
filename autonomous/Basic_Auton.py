@@ -35,12 +35,10 @@ class BasicAuto(AutonomousStateMachine):
 
     @state()
     def drive(self):
-        speed = ChassisSpeeds(vx=0, vy=autonSpeedScaling, omega=0)
-        self.driveTrain.driveRobot(speed)
+        self.driveTrain.driveRobot(0, autonSpeedScaling, 0,0.02, field_relative=False)
         if self.distance_target - self.get_distance() < self.position_deadband:
             self.next_state("second_state")
 
     @state()
     def second_state(self):
-        speed = ChassisSpeeds(0,0,0)
-        self.driveTrain.driveRobot(speed)
+        self.driveTrain.driveRobot(0, 0, 0, 0.02)

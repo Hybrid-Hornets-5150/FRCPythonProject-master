@@ -225,7 +225,6 @@ class DriveTrain(Subsystem):
         if driver_relative and field_relative and DriverStation.getAlliance() == DriverStation.Alliance.kRed:
             vx = -vx
             vy = -vy
-            vrot = -vrot
 
         states = self.kinematics.toSwerveModuleStates(
             ChassisSpeeds.discretize(
