@@ -146,3 +146,34 @@ class AddArmAngle(Command):
 
     def cancel(self) -> None:
         self.running = False
+
+class SetGyroRed(Command):
+    def __init__(self, drivetrain):
+        super().__init__()
+        self.addRequirements(drivetrain)
+        self.drivetrain = drivetrain
+
+    def initialize(self):
+        self.drivetrain.gyro.set_yaw(0)
+
+    def isFinished(self) -> bool:
+        return True
+
+    def runsWhenDisabled(self) -> bool:
+        return True
+
+
+class SetGyroBlue(Command):
+    def __init__(self, drivetrain):
+        super().__init__()
+        self.addRequirements(drivetrain)
+        self.drivetrain = drivetrain
+
+    def initialize(self):
+        self.drivetrain.gyro.set_yaw(180)
+
+    def isFinished(self) -> bool:
+        return True
+
+    def runsWhenDisabled(self) -> bool:
+        return True

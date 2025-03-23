@@ -13,7 +13,7 @@ from wpimath._controls._controls.controller import HolonomicDriveController, PID
 from wpimath._controls._controls.trajectory import TrapezoidProfileRadians
 from wpimath.geometry import Transform2d
 
-from commands import LiftVelocity, RunIntake, SetKickerPercent, AddArmAngle
+from commands import LiftVelocity, RunIntake, SetKickerPercent, AddArmAngle, SetGyroRed, SetGyroBlue
 from components.chassis import *
 from components.climber import Climber
 from components.lift import Lift, Arm, Grabber
@@ -72,10 +72,11 @@ class MyRobot(magicbot.MagicRobot):
     def createObjects(self):
         SmartDashboard.putBoolean("Arm Angle In Manual", self.arm_manual)
         SmartDashboard.putBoolean("Lift Height In Manual", self.lift_manual)
-        SmartDashboard.putNumber("Desired X Velocity", 0)
-        SmartDashboard.putNumber("Desired Y Velocity", 0)
-        SmartDashboard.putNumber("Desired Rotational Velocity", 0)
+        # SmartDashboard.putNumber("Desired X Velocity", 0)
+        # SmartDashboard.putNumber("Desired Y Velocity", 0)
+        # SmartDashboard.putNumber("Desired Rotational Velocity", 0)
         SmartDashboard.putBoolean("Drive Train in Slow Mode", False)
+
 
         self.automaticController = HolonomicDriveController(
             PIDController(2, 0, 0.1),
@@ -95,7 +96,7 @@ class MyRobot(magicbot.MagicRobot):
         SmartDashboard.putData("Auton Trajectory", self.traj_chooser)
 
         try:
-            self.trajectory = choreo.load_swerve_trajectory("test_auton_lower (three score)")
+            self.trajectory = choreo.load_swerve_trajectory("test_auton_lower (one score)")
         except ValueError:
             pass
 
@@ -117,6 +118,9 @@ class MyRobot(magicbot.MagicRobot):
         self.arm = Arm()
         self.climber = Climber()
         self.grabber = Grabber()
+
+        SmartDashboard.putData("Set Gyro RED", SetGyroRed(self.driveTrain))
+        SmartDashboard.putData("Set Gyro BLUE", SetGyroBlue(self.driveTrain))
 
         # region operatorControls
         self.operatorController.povUp().onTrue(
@@ -205,7 +209,7 @@ class MyRobot(magicbot.MagicRobot):
 
         self.operatorController.leftBumper().onTrue(
             InstantCommand(
-                lambda: self.arm.HAMMAR(8)
+                lambda: self.arm.HAMMAR(-8)
             )
         ).onFalse(
             InstantCommand(
@@ -215,7 +219,7 @@ class MyRobot(magicbot.MagicRobot):
 
         self.operatorController.rightBumper().onTrue(
             InstantCommand(
-                lambda: self.arm.HAMMAR(-8)
+                lambda: self.arm.HAMMAR(8)
             )
         ).onFalse(
             InstantCommand(
@@ -377,10 +381,16 @@ class MyRobot(magicbot.MagicRobot):
     def teleopPeriodic(self):
         # Called every 20ms when teleop runs
 
+        #TODO: Testing code
         result = self.camera.getLatestResult()
         best_target = result.getBestTarget()
         if best_target:
             SmartDashboard.putNumber("Best Target", float(best_target.fiducialId))
+            tx = best_target.getBestCameraToTarget()
+            rotation = tx.rotation()
+            SmartDashboard.putNumber("Camera Delta X", rotation.x_degrees)
+            SmartDashboard.putNumber("Camera Delta Y", rotation.y_degrees)
+            SmartDashboard.putNumber("Camera Delta Z", rotation.z_degrees)
 
         # region operatorControl
 
@@ -430,33 +440,33 @@ class MyRobot(magicbot.MagicRobot):
         else:
             SmartDashboard.putBoolean("Field Oriented Control", rel)
             self.driveTrain.driveRobot(x_speed, y_speed, rot_speed, self.control_loop_wait_time, field_relative=rel, driver_relative=rel)
+
+            l_trigger = self.driveController.getLeftTriggerAxis()
+            r_trigger = self.driveController.getRightTriggerAxis()
+
+            l_trigger = MyRobot.deadband(l_trigger, 0.2)
+            r_trigger = MyRobot.deadband(r_trigger, 0.2)
+
+            if r_trigger > 0:
+                self.coral_intake_fsm.intake()
+            elif l_trigger > 0:
+                self.coral_score_fsm.run()
         # endregion
 
-        l_trigger = self.driveController.getLeftTriggerAxis()
-        r_trigger = self.driveController.getRightTriggerAxis()
-
-        l_trigger = MyRobot.deadband(l_trigger, 0.2)
-        r_trigger = MyRobot.deadband(r_trigger, 0.2)
-
-
-        if r_trigger > 0:
-            self.coral_intake_fsm.intake()
-        elif l_trigger > 0:
-            self.coral_score_fsm.run()
             # Old scoring
             # self.grabber.intake_percent = -0.2
             # self.grabber.kicker_percent = 0.5
 
-        if l_trigger <= 0.1 and r_trigger <= 0.1 and not self.manual_intake:
-            self.grabber.intake_percent = 0.02
-            self.grabber.kicker_percent = 0
+            if l_trigger <= 0.1 and r_trigger <= 0.1 and not self.manual_intake:
+                self.grabber.intake_percent = 0.02
+                self.grabber.kicker_percent = 0
 
-        if self.lift_setpoint_index > 0 or self.arm_setpoint_index > 2:
-            speed_scalar = 0.5
-            slow = True
-        else:
-            speed_scalar = 1
-            slow = False
+            if self.lift_setpoint_index > 0 or self.arm_setpoint_index > 2:
+                speed_scalar = 0.5
+                slow = True
+            else:
+                speed_scalar = 1
+                slow = False
 
         # endregion
 

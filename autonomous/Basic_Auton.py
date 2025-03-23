@@ -35,7 +35,7 @@ class BasicAuto(AutonomousStateMachine):
 
     @state()
     def drive(self):
-        self.driveTrain.driveRobot(0, autonSpeedScaling, 0,0.02, field_relative=False)
+        self.driveTrain.driveRobot(autonSpeedScaling, 0, 0,0.02, field_relative=False)
         if self.distance_target - self.get_distance() < self.position_deadband:
             self.next_state("second_state")
 

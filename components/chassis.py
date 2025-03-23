@@ -20,8 +20,8 @@ MotorConfig = namedtuple("MotorConfig", ["kP", "kI", "kD"])
 
 kMaxSpeed = 3  # Meters per second
 kRobotToCamera = Transform3d(
-    Translation3d(-0.13, 0.285, 0.44),  # Robot relative coordinates of the camera's mounting position.
-    Rotation3d.fromDegrees(0.0, 0.0, 0.0)  # Robot relative rotation of the camera mounting position.
+    Translation3d(-0.17145, 0.2794, 0.4445),  # Robot relative coordinates of the camera's mounting position.
+    Rotation3d.fromDegrees(3.25, -12.88, 1.0)  # Robot relative rotation of the camera mounting position.
 )
 
 
@@ -48,7 +48,8 @@ class SwerveModule(Subsystem):
         self.setup()
 
     def execute(self):
-        SmartDashboard.putNumber("Module Speed", self.drive_motor.getEncoder().getVelocity())
+        pass
+        # SmartDashboard.putNumber("Module Speed", self.drive_motor.getEncoder().getVelocity())
 
     # Setup code for all functional components
     def setup(self):
@@ -89,7 +90,7 @@ class SwerveModule(Subsystem):
         rotations = self.drive_motor.getEncoder().getPosition()  # How many revolutions has the drive motor done
         angle_rotations = self.get_swerve_rotations()
         angle = Rotation2d.fromRotations(angle_rotations - 0.25)
-        SmartDashboard.putNumber(f"ID {self.swerve_motor.getDeviceId()} Pos", angle.degrees())
+        # SmartDashboard.putNumber(f"ID {self.swerve_motor.getDeviceId()} Pos", angle.degrees())
         return SwerveModulePosition(math.pi * wpimath.units.inchesToMeters(3) * rotations / DrivePID.Ratio, angle)
 
     def get_state(self) -> SwerveModuleState:

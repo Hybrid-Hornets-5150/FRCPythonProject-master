@@ -3,7 +3,7 @@ import time
 
 from choreo import SwerveTrajectory
 from magicbot import AutonomousStateMachine, state
-from wpilib import Field2d, Timer, DriverStation, DataLogManager
+from wpilib import Field2d, Timer, DriverStation, DataLogManager, SmartDashboard
 from wpimath._controls._controls.controller import HolonomicDriveController, PIDController, ProfiledPIDControllerRadians
 from wpimath._controls._controls.trajectory import TrapezoidProfileRadians
 from wpiutil._wpiutil.log import StringLogEntry
@@ -26,8 +26,8 @@ class TrajectoryFollower(AutonomousStateMachine):
     field: Field2d
     coral_autoscore_right_fsm: ScoreCoralRight
 
-    x_controller = PIDController(4.0, 0.0, 0.0)
-    y_controller = PIDController(4.0, 0.0, 0.0)
+    x_controller = PIDController(2.0, 0.0, 0.0)
+    y_controller = PIDController(2.0, 0.0, 0.0)
     heading_controller = PIDController(2.75, 0.0, 0.0)
 
     heading_controller.enableContinuousInput(-math.pi, math.pi)
@@ -47,6 +47,7 @@ class TrajectoryFollower(AutonomousStateMachine):
         for event in self.events:
             if timestamp >= event.timestamp:
                 self.events.remove(event)
+                print(self.events)
                 print("Handling event: ", event.event)
                 # Run the event if it is defined
                 if event.event in self.state_names:
@@ -71,6 +72,7 @@ class TrajectoryFollower(AutonomousStateMachine):
         self.go_to_pose = False
         self.timer = Timer()
         self.timer.start()
+        self.arm.arm_angle = -75
         self.events = self.trajectory.events.copy()
         self.driveTrain.resetPose(self.trajectory.get_initial_pose(self.is_red_alliance()))
         self.lift.set_height(0)
@@ -79,6 +81,7 @@ class TrajectoryFollower(AutonomousStateMachine):
     @state()
     def follow_path(self):
         timestamp = self.timer.get()
+        SmartDashboard.putNumber("Auton Timer", timestamp)
         self.process_events(timestamp)
         if self.trajectory:
             sample = self.trajectory.sample_at(timestamp, self.is_red_alliance())
@@ -91,7 +94,7 @@ class TrajectoryFollower(AutonomousStateMachine):
             self.driveTrain.driveRobot(vx, vy, vrot, 0.02, field_relative=True)
             if self.go_to_pose:
                 self.next_state("score_coral")
-            if timestamp > self.trajectory.get_total_time() + 10:
+            if timestamp > self.trajectory.get_total_time() + 1:
                 self.next_state("at_target")
 
     @state()
@@ -108,12 +111,13 @@ class TrajectoryFollower(AutonomousStateMachine):
     @state()
     def score_coral(self):
         self.timer.stop()
-        self.go_to_pose = True
+        SmartDashboard.putNumber("Auton Timer", self.timer.get())
+
         if False and (not self.x_controller.atSetpoint() or not self.y_controller.atSetpoint()):
             self.next_state("follow_path")
         else:
-            self.driveTrain.driveRobot(0,0,0,0.02)
             self.coral_autoscore_right_fsm.run()
+            SmartDashboard.putString("Autoscore state", self.coral_autoscore_right_fsm.current_state)
             if self.coral_autoscore_right_fsm.current_state == "finished":
                 self.timer.start()
                 self.go_to_pose = False
@@ -128,3 +132,4 @@ class TrajectoryFollower(AutonomousStateMachine):
     @state()
     def at_target(self):
         self.driveTrain.driveRobot(0, 0, 0, 0.02)
+

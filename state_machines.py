@@ -213,7 +213,7 @@ class ScoreCoralRight(StateMachine):
     complete = False
     starting_lift_height = 0
     starting_arm_angle = 0
-    y_offset = 0.0
+    y_offset = 0.05
 
     def run(self):
         self.engage()
@@ -259,10 +259,10 @@ class ScoreCoralRight(StateMachine):
         angle_err = pose_err.rotation().radians()
         self.driveTrain.driveRobot(clamp(x_err * 3, 3), clamp(y_err * 3, 3), clamp(angle_err * 2, 3), 0.02,
                                    field_relative=False)
-        if abs(x_err) < 0.05 and abs(y_err) < 0.05 and abs(angle_err) < 0.09:
+        if abs(x_err) < 0.2 and abs(y_err) < 0.2 and abs(angle_err) < 0.09:
             self.next_state("stabilize")
 
-    @timed_state(duration=1.0, next_state="approach")
+    @timed_state(duration=1.5, next_state="approach")
     def stabilize(self):
         print("stabilizing")
         self.lift.set_height(24)
@@ -274,8 +274,8 @@ class ScoreCoralRight(StateMachine):
         angle_err = pose_err.rotation().radians()
         self.driveTrain.driveRobot(clamp(x_err * 2, 3), clamp(y_err * 2, 3), clamp(angle_err * 2, 3), 0.02,
                                    field_relative=False)
-        if abs(x_err) > 0.05 or abs(y_err) > 0.05 or abs(angle_err) > 0.09:
-            self.next_state_now("initialize")
+        # if abs(x_err) > 0.05 or abs(y_err) > 0.05 or abs(angle_err) > 0.09:
+        #     self.next_state_now("initialize")
 
     @state()
     def approach(self):
@@ -283,9 +283,9 @@ class ScoreCoralRight(StateMachine):
         x_err = pose_err.x
         y_err = pose_err.y
         angle_err = pose_err.rotation().radians()
-        self.driveTrain.driveRobot(clamp(x_err * 2, 1), clamp(y_err * 2, 1), clamp(angle_err * 2, 1), 0.02,
+        self.driveTrain.driveRobot(clamp(x_err * 2, 1), clamp(y_err * 3, 1), clamp(angle_err * 2, 1), 0.02,
                                    field_relative=False)
-        if abs(x_err) < 0.05 and abs(y_err) < 0.05 and abs(angle_err) < 0.09:
+        if abs(x_err) < 0.05 and abs(y_err) < 0.05:
             self.next_state("hold")
 
     @timed_state(duration=1.0, next_state="score")
