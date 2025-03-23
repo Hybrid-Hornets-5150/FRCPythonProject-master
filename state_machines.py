@@ -214,6 +214,8 @@ class ScoreCoralRight(StateMachine):
     starting_lift_height = 0
     starting_arm_angle = 0
     y_offset = 0.05
+    seen_target = False
+
     red_target = 10
     blue_target = 21
 
@@ -240,6 +242,7 @@ class ScoreCoralRight(StateMachine):
         scorable_id = self.red_target
         if DriverStation.getAlliance() == DriverStation.Alliance.kBlue:
             scorable_id = self.blue_target
+
         for target in result.getTargets():
             if target.getFiducialId() == scorable_id:
                 best_target = target
@@ -248,6 +251,7 @@ class ScoreCoralRight(StateMachine):
             target_offset = best_target.getBestCameraToTarget()
             SmartDashboard.putNumber("Target X Offset", target_offset.x)
             SmartDashboard.putNumber("Target Y Offset", target_offset.y)
+            SmartDashboard.putNumber("Vision Target ID", float(best_target.getFiducialId()))
             # Subtract 0.5 from the target position since the alignment function will go 0.5m forward after ligning up
             relative_x = target_offset.x - 0.29 - 0.5
             relative_y = target_offset.y + self.y_offset
@@ -255,9 +259,15 @@ class ScoreCoralRight(StateMachine):
             relative_rot = angle_difference.radians()
             # Update our target vector the entire time the camera can see the target
             self.set_transform(Transform2d(relative_x, relative_y, relative_rot))
+            self.seen_target = True
 
     @state(first=True)
     def initialize(self):
+        self.seen_target = False
+        self.next_state("drive")
+
+    @state()
+    def drive(self):
         self.starting_lift_height = self.lift.get_height()
         self.starting_arm_angle = self.arm.arm_angle
         self.target_right()
@@ -266,10 +276,13 @@ class ScoreCoralRight(StateMachine):
         x_err = pose_err.x
         y_err = pose_err.y
         angle_err = pose_err.rotation().radians()
-        self.driveTrain.driveRobot(clamp(x_err * 3, 3), clamp(y_err * 3, 3), clamp(angle_err * 2, 3), 0.02,
-                                   field_relative=False)
-        if abs(x_err) < 0.2 and abs(y_err) < 0.2 and abs(angle_err) < 0.09:
-            self.next_state("stabilize")
+        if self.seen_target:
+            self.driveTrain.driveRobot(clamp(x_err * 3, 3), clamp(y_err * 3, 3), clamp(angle_err * 2, 3), 0.02,
+                                       field_relative=False)
+            if abs(x_err) < 0.2 and abs(y_err) < 0.2 and abs(angle_err) < 0.09:
+                self.next_state("stabilize")
+        else:
+            self.driveTrain.driveRobot(1, 0, 0, 0.02, field_relative=False)
 
     @timed_state(duration=1.5, next_state="approach")
     def stabilize(self):
