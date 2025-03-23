@@ -3,7 +3,7 @@ import time
 import wpimath
 from magicbot import StateMachine, state, timed_state
 from photonlibpy import PhotonCamera
-from wpilib import Timer, Field2d, SmartDashboard
+from wpilib import Timer, Field2d, SmartDashboard, DriverStation
 from wpimath._controls._controls.controller import HolonomicDriveController, ProfiledPIDControllerRadians
 from wpimath._controls._controls.trajectory import Trajectory, TrajectoryGenerator, TrajectoryConfig, \
     TrapezoidProfileRadians
@@ -214,6 +214,8 @@ class ScoreCoralRight(StateMachine):
     starting_lift_height = 0
     starting_arm_angle = 0
     y_offset = 0.05
+    red_target = 10
+    blue_target = 21
 
     def run(self):
         self.engage()
@@ -234,7 +236,14 @@ class ScoreCoralRight(StateMachine):
 
     def target_right(self):
         result = self.camera.getLatestResult()
-        best_target = result.getBestTarget()
+        best_target = None
+        scorable_id = self.red_target
+        if DriverStation.getAlliance() == DriverStation.Alliance.kBlue:
+            scorable_id = self.blue_target
+        for target in result.getTargets():
+            if target.getFiducialId() == scorable_id:
+                best_target = target
+
         if best_target:
             target_offset = best_target.getBestCameraToTarget()
             SmartDashboard.putNumber("Target X Offset", target_offset.x)
