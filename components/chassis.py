@@ -141,6 +141,7 @@ class SwerveModule(Subsystem):
 class DriveTrain(Subsystem):
     swerve: dict[str: SwerveModule]
 
+    locked = False
     def __init__(self, field: Field2d, camera: PhotonCamera):
         super().__init__()
         self.field = field
@@ -201,6 +202,21 @@ class DriveTrain(Subsystem):
         # THE ORIGIN WILL REMAIN ON THE BLUE SIDE
         return DriverStation.getAlliance() == DriverStation.Alliance.kRed
 
+    def lock_swerve(self):
+        self.locked = True
+        self.swerve["NW"].set_swerve_rotations(Rotation2d.fromDegrees(-45))
+        self.swerve["NE"].set_swerve_rotations(Rotation2d.fromDegrees(45))
+        self.swerve["SW"].set_swerve_rotations(Rotation2d.fromDegrees(45))
+        self.swerve["SE"].set_swerve_rotations(Rotation2d.fromDegrees(-45))
+
+        self.swerve["NW"].set_drive_speed(0)
+        self.swerve["NE"].set_drive_speed(0)
+        self.swerve["SW"].set_drive_speed(0)
+        self.swerve["SE"].set_drive_speed(0)
+
+    def unlock_swerve(self):
+        self.locked = False
+
     def drive_all_percent(self, percent):
         for mod in self.swerve:
             self.swerve[mod].drive_motor.set(percent)
@@ -220,7 +236,8 @@ class DriveTrain(Subsystem):
         return self.pose_estimator.update(self.camera.getLatestResult())
 
     def driveRobot(self, vx, vy, vrot, period, field_relative=False, driver_relative=False):
-
+        if self.locked:
+            return
         # Handle all of the kinematics to drive the robot. Our coordinate system is messed up, which is why the vx and
         # vy are mixed up. This works for now, but might be worth fixing later for completeness' sake
         if driver_relative and field_relative and DriverStation.getAlliance() == DriverStation.Alliance.kRed:

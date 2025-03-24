@@ -254,6 +254,12 @@ class MyRobot(magicbot.MagicRobot):
             .andThen(InstantCommand(lambda: setattr(self, "manual_intake", False)))
         )
 
+        self.driveController.povUp().onTrue(
+            InstantCommand(lambda: self.driveTrain.lock_swerve())
+        ).onFalse(
+            InstantCommand(lambda: self.driveTrain.unlock_swerve())
+        )
+
         # endregion
 
     def l1_scoring_position(self):

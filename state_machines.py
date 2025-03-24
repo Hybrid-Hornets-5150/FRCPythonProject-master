@@ -307,10 +307,10 @@ class ScoreCoralRight(StateMachine):
         angle_err = pose_err.rotation().radians()
         self.driveTrain.driveRobot(clamp(x_err * 2, 1), clamp(y_err * 3, 1), clamp(angle_err * 2, 1), 0.02,
                                    field_relative=False)
-        if abs(x_err) < 0.05 and abs(y_err) < 0.05:
-            self.next_state("hold")
+        if abs(x_err) < 0.075 and abs(y_err) < 0.075:
+            self.next_state("score")
 
-    @timed_state(duration=1.0, next_state="score")
+    @timed_state(duration=1.5, next_state="score")
     def hold(self):
         pose_err = self.calculate_offset_pose().relativeTo(self.driveTrain.getPose())
         x_err = pose_err.x
@@ -319,7 +319,7 @@ class ScoreCoralRight(StateMachine):
         self.driveTrain.driveRobot(clamp(x_err * 3, 1), clamp(y_err * 3, 1), clamp(angle_err * 5, 2), 0.02,
                                    field_relative=False)
 
-    @timed_state(duration=0.75, next_state="run_away")
+    @timed_state(duration=3, next_state="run_away")
     def score(self):
         self.arm.arm_angle = 25
 
@@ -330,7 +330,7 @@ class ScoreCoralRight(StateMachine):
         x_err = pose_err.x
         y_err = pose_err.y
         angle_err = pose_err.rotation().radians()
-        self.driveTrain.driveRobot(clamp(x_err * 2, 1), clamp(y_err * 2, 1), clamp(angle_err * 2, 1), 0.02,
+        self.driveTrain.driveRobot(clamp(x_err * 2, 1), 0, 0, 0.02,
                                    field_relative=False)
 
     @state()
